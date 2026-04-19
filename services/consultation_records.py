@@ -1,7 +1,6 @@
 import json
 from datetime import datetime, timezone
 from io import BytesIO
-from pathlib import Path
 
 from database import get_connection
 
@@ -64,45 +63,6 @@ def close_consultation_record(consultation_id: str):
     )
 
 
-def get_consultation_diagnosis(consultation_id: str) -> str:
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT diagnosis
-            FROM consultations
-            WHERE consultation_id = ?
-            """,
-            (consultation_id,),
-        )
-        row = cursor.fetchone()
-    if not row or not row["diagnosis"]:
-        return ""
-    return row["diagnosis"].strip()
-
-
-def set_consultation_diagnosis(consultation_id: str, diagnosis: str):
-    diagnosis = diagnosis.strip()
-    if not diagnosis:
-        return
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            UPDATE consultations
-            SET diagnosis = ?
-            WHERE consultation_id = ?
-            """,
-            (diagnosis, consultation_id),
-        )
-        conn.commit()
-    log_consultation_event(
-        consultation_id,
-        event_type="consultation_diagnosis_saved",
-        details=diagnosis,
-    )
-
-
 def set_doctor_private_notes(consultation_id: str, notes: str):
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -120,204 +80,6 @@ def set_doctor_private_notes(consultation_id: str, notes: str):
         event_type="doctor_note_saved",
         details=notes,
     )
-
-
-def save_consultation_snapshot(consultation_id: str):
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            UPDATE consultations
-            SET saved_at = ?
-            WHERE consultation_id = ?
-            """,
-            (_now_iso(), consultation_id),
-        )
-        conn.commit()
-
-        cursor.execute(
-            "SELECT COUNT(*) AS total FROM consultation_messages WHERE consultation_id = ?",
-            (consultation_id,),
-        )
-        message_total = (cursor.fetchone() or {"total": 0})["total"]
-
-        cursor.execute(
-            "SELECT COUNT(*) AS total FROM prescriptions WHERE consultation_id = ?",
-            (consultation_id,),
-        )
-        prescription_total = (cursor.fetchone() or {"total": 0})["total"]
-
-        cursor.execute(
-            "SELECT COUNT(*) AS total FROM investigation_requests WHERE consultation_id = ?",
-            (consultation_id,),
-        )
-        investigation_total = (cursor.fetchone() or {"total": 0})["total"]
-
-        cursor.execute(
-            "SELECT COUNT(*) AS total FROM clinical_letters WHERE consultation_id = ?",
-            (consultation_id,),
-        )
-        letter_total = (cursor.fetchone() or {"total": 0})["total"]
-
-    log_consultation_event(
-        consultation_id,
-        event_type="consultation_saved",
-        details=(
-            f"messages={message_total}, prescriptions={prescription_total}, "
-            f"investigations={investigation_total}, letters={letter_total}"
-        ),
-    )
-
-
-def _find_latest_consultation(cursor, identifier: str):
-    cursor.execute(
-        """
-        SELECT consultation_id, patient_id, doctor_id, status, notes,
-               created_at, closed_at, doctor_private_notes, diagnosis, saved_at,
-               patient_telegram_id, doctor_telegram_id
-        FROM consultations
-        WHERE consultation_id = ?
-           OR patient_id = ?
-        ORDER BY created_at DESC
-        LIMIT 1
-        """,
-        (identifier, identifier.upper()),
-    )
-    return cursor.fetchone()
-
-
-def _resolve_asset_path(asset_path: str | None) -> Path | None:
-    if not asset_path:
-        return None
-    path = Path(asset_path)
-    if not path.is_absolute():
-        path = Path(__file__).resolve().parent.parent / asset_path
-    return path if path.exists() else None
-
-
-def get_latest_consultation_bundle(identifier: str):
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        consultation = _find_latest_consultation(cursor, identifier)
-        if not consultation:
-            return None
-
-        cursor.execute(
-            """
-            SELECT patient_id, telegram_id, name, age, gender, phone, email, address, allergy, medical_conditions
-            FROM patients
-            WHERE patient_id = ?
-            """,
-            (consultation["patient_id"],),
-        )
-        patient = cursor.fetchone()
-
-        cursor.execute(
-            """
-            SELECT sender_role, sender_id, message_text, asset_path, asset_type, created_at
-            FROM consultation_messages
-            WHERE consultation_id = ?
-            ORDER BY id ASC
-            """,
-            (consultation["consultation_id"],),
-        )
-        messages = cursor.fetchall()
-
-        cursor.execute(
-            """
-            SELECT rx_id AS document_id, consultation_id, doctor_id, patient_id, medication_json,
-                   notes, created_at, asset_path, asset_type
-            FROM prescriptions
-            WHERE consultation_id = ?
-            ORDER BY created_at DESC
-            """,
-            (consultation["consultation_id"],),
-        )
-        prescriptions = cursor.fetchall()
-
-        cursor.execute(
-            """
-            SELECT request_id AS document_id, consultation_id, doctor_id, patient_id, diagnosis,
-                   tests_text, notes, created_at, asset_path, asset_type
-            FROM investigation_requests
-            WHERE consultation_id = ?
-            ORDER BY created_at DESC
-            """,
-            (consultation["consultation_id"],),
-        )
-        investigations = cursor.fetchall()
-
-        cursor.execute(
-            """
-            SELECT letter_id AS document_id, consultation_id, doctor_id, patient_id, document_type,
-                   diagnosis, body_text, target_hospital, created_at, asset_path, asset_type
-            FROM clinical_letters
-            WHERE consultation_id = ?
-            ORDER BY created_at DESC
-            """,
-            (consultation["consultation_id"],),
-        )
-        letters = cursor.fetchall()
-
-    return {
-        "consultation": consultation,
-        "patient": patient,
-        "messages": messages,
-        "prescriptions": prescriptions,
-        "investigations": investigations,
-        "letters": letters,
-    }
-
-
-def get_consultation_document_records(identifier: str):
-    bundle = get_latest_consultation_bundle(identifier)
-    if not bundle:
-        return None
-
-    documents = []
-    for row in bundle["prescriptions"]:
-        documents.append(
-            {
-                "kind": "prescription",
-                "document_id": row["document_id"],
-                "consultation_id": row["consultation_id"],
-                "created_at": row["created_at"],
-                "asset_path": row["asset_path"],
-                "asset_type": row["asset_type"],
-                "row": row,
-            }
-        )
-    for row in bundle["investigations"]:
-        documents.append(
-            {
-                "kind": "investigation",
-                "document_id": row["document_id"],
-                "consultation_id": row["consultation_id"],
-                "created_at": row["created_at"],
-                "asset_path": row["asset_path"],
-                "asset_type": row["asset_type"],
-                "row": row,
-            }
-        )
-    for row in bundle["letters"]:
-        documents.append(
-            {
-                "kind": row["document_type"],
-                "document_id": row["document_id"],
-                "consultation_id": row["consultation_id"],
-                "created_at": row["created_at"],
-                "asset_path": row["asset_path"],
-                "asset_type": row["asset_type"],
-                "row": row,
-            }
-        )
-
-    documents.sort(key=lambda item: item["created_at"], reverse=True)
-    return {
-        "consultation_id": bundle["consultation"]["consultation_id"],
-        "patient": bundle["patient"],
-        "documents": documents,
-    }
 
 
 def log_consultation_event(consultation_id: str, *, event_type: str, actor_id: str | None = None, details: str = ""):
@@ -528,13 +290,45 @@ def log_consultation_message(
 
 
 def export_consultation_file(identifier: str):
-    bundle = get_latest_consultation_bundle(identifier)
-    if not bundle:
-        return None
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT consultation_id, patient_id, doctor_id, status, notes,
+                   created_at, closed_at, doctor_private_notes
+            FROM consultations
+            WHERE consultation_id = ?
+               OR patient_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (identifier, identifier.upper()),
+        )
+        consultation = cursor.fetchone()
 
-    consultation = bundle["consultation"]
-    patient = bundle["patient"]
-    messages = bundle["messages"]
+        if not consultation:
+            return None
+
+        cursor.execute(
+            """
+            SELECT sender_role, sender_id, message_text, created_at
+            FROM consultation_messages
+            WHERE consultation_id = ?
+            ORDER BY id ASC
+            """,
+            (consultation["consultation_id"],),
+        )
+        messages = cursor.fetchall()
+
+        cursor.execute(
+            """
+            SELECT patient_id, name, age, gender, phone, address, allergy
+            FROM patients
+            WHERE patient_id = ?
+            """,
+            (consultation["patient_id"],),
+        )
+        patient = cursor.fetchone()
 
     lines = [
         "SynMed Telehealth Consultation Export",
@@ -545,8 +339,6 @@ def export_consultation_file(identifier: str):
         f"Status: {consultation['status']}",
         f"Created At: {consultation['created_at']}",
         f"Closed At: {consultation['closed_at'] or 'Active'}",
-        f"Saved At: {consultation['saved_at'] or 'Not explicitly saved'}",
-        f"Diagnosis: {consultation['diagnosis'] or 'Not recorded'}",
         "",
     ]
 
@@ -557,10 +349,8 @@ def export_consultation_file(identifier: str):
             f"Age: {patient['age']}",
             f"Gender: {patient['gender']}",
             f"Phone: {patient['phone']}",
-            f"Email: {patient['email'] or 'N/A'}",
             f"Address: {patient['address'] or 'N/A'}",
             f"Allergy: {patient['allergy'] or 'None recorded'}",
-            f"Medical Conditions: {patient['medical_conditions'] or 'None recorded'}",
             "",
         ])
 
@@ -581,34 +371,6 @@ def export_consultation_file(identifier: str):
             )
     else:
         lines.append("No chat transcript recorded.")
-
-    if bundle["prescriptions"]:
-        lines.extend(["", "Prescriptions"])
-        for item in bundle["prescriptions"]:
-            diagnosis = "N/A"
-            try:
-                payload = json.loads(item["medication_json"] or "{}")
-                diagnosis = payload.get("diagnosis") or "N/A"
-            except (TypeError, ValueError, json.JSONDecodeError):
-                pass
-            lines.append(
-                f"{item['created_at']} | {item['document_id']} | Diagnosis: {diagnosis} | Asset: {item['asset_path'] or 'N/A'}"
-            )
-
-    if bundle["investigations"]:
-        lines.extend(["", "Investigations"])
-        for item in bundle["investigations"]:
-            lines.append(
-                f"{item['created_at']} | {item['document_id']} | Diagnosis: {item['diagnosis'] or 'N/A'} | Asset: {item['asset_path'] or 'N/A'}"
-            )
-
-    if bundle["letters"]:
-        lines.extend(["", "Referral Notes / Medical Reports"])
-        for item in bundle["letters"]:
-            extra = f" | Target: {item['target_hospital']}" if item["target_hospital"] else ""
-            lines.append(
-                f"{item['created_at']} | {item['document_type']} | {item['document_id']} | Diagnosis: {item['diagnosis']}{extra}"
-            )
 
     content = "\n".join(lines) + "\n"
     buffer = BytesIO(content.encode("utf-8"))

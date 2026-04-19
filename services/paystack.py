@@ -173,34 +173,6 @@ def get_payment_by_token(payment_token: str):
         return cursor.fetchone()
 
 
-def get_latest_valid_payment_for_patient(patient_id: str):
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT reference, telegram_id, patient_id, email, amount, currency,
-                   patient_type, label, authorization_url, access_code,
-                   status, paystack_status, created_at, verified_at,
-                   payment_token, payment_token_used_at, registration_payload_json
-            FROM payments
-            WHERE patient_id = ? AND status = 'verified'
-            ORDER BY verified_at DESC, id DESC
-            LIMIT 1
-            """,
-            (patient_id,),
-        )
-        payment = cursor.fetchone()
-
-    if not payment:
-        return None
-
-    verified_at = _parse_iso_datetime(payment["verified_at"])
-    if verified_at is None or datetime.now(UTC) - verified_at > PAYMENT_TOKEN_VALIDITY:
-        return None
-
-    return payment
-
-
 def redeem_payment_token(*, payment_token: str, patient_id: str):
     payment = get_payment_by_token(payment_token)
     if not payment:
@@ -215,43 +187,6 @@ def redeem_payment_token(*, payment_token: str, patient_id: str):
         return None
 
     return get_payment_by_token(payment_token)
-
-
-def grant_manual_payment_override(
-    *,
-    telegram_id: int,
-    patient_id: str,
-    email: str,
-    amount: int,
-    currency: str = "NGN",
-    label: str = "SynMed Manual Payment Override",
-    patient_type: str = "returning",
-    reference: str | None = None,
-):
-    reference = reference or create_payment_reference(prefix="manual")
-    existing = get_payment_by_reference(reference)
-    if existing:
-        return mark_payment_verified(
-            reference,
-            paystack_status="manual_override",
-            patient_id=patient_id,
-        )
-
-    create_payment_record(
-        reference=reference,
-        telegram_id=telegram_id,
-        patient_id=patient_id,
-        email=email or "",
-        amount=amount,
-        currency=currency,
-        patient_type=patient_type,
-        label=label,
-    )
-    return mark_payment_verified(
-        reference,
-        paystack_status="manual_override",
-        patient_id=patient_id,
-    )
 
 
 async def initialize_transaction(

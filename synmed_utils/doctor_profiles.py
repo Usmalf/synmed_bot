@@ -14,10 +14,6 @@ def _row_to_profile(row):
         "license_file_id": row["license_file_id"],
         "license_file_type": row["license_file_type"],
         "username": row["username"],
-        "email": row["email"],
-        "password_hash": row["password_hash"],
-        "license_expiry_date": row["license_expiry_date"],
-        "updated_at": row["updated_at"],
         "verified": bool(row["verified"]),
     }
 
@@ -32,8 +28,7 @@ class DoctorProfileStore:
             cursor.execute(
                 """
                 SELECT name, specialty, experience, license_id, license_file_id,
-                       license_file_type, username, email, password_hash, license_expiry_date,
-                       updated_at, verified
+                       license_file_type, username, verified
                 FROM doctor_profiles
                 WHERE telegram_id = ?
                 """,
@@ -52,8 +47,7 @@ class DoctorProfileStore:
             cursor.execute(
                 """
                 SELECT telegram_id, name, specialty, experience, license_id,
-                       license_file_id, license_file_type, username, email, password_hash,
-                       license_expiry_date, updated_at, verified
+                       license_file_id, license_file_type, username, verified
                 FROM doctor_profiles
                 ORDER BY telegram_id
                 """
@@ -87,10 +81,9 @@ def create_or_update_profile(doctor_id: int, data: dict):
             """
             INSERT INTO doctor_profiles (
                 telegram_id, name, specialty, experience, license_id,
-                license_file_id, license_file_type, username, email,
-                password_hash, license_expiry_date, updated_at, verified
+                license_file_id, license_file_type, username, verified
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(telegram_id) DO UPDATE SET
                 name = excluded.name,
                 specialty = excluded.specialty,
@@ -99,10 +92,6 @@ def create_or_update_profile(doctor_id: int, data: dict):
                 license_file_id = excluded.license_file_id,
                 license_file_type = excluded.license_file_type,
                 username = excluded.username,
-                email = excluded.email,
-                password_hash = excluded.password_hash,
-                license_expiry_date = excluded.license_expiry_date,
-                updated_at = excluded.updated_at,
                 verified = excluded.verified
             """,
             (
@@ -114,10 +103,6 @@ def create_or_update_profile(doctor_id: int, data: dict):
                 merged.get("license_file_id"),
                 merged.get("license_file_type"),
                 merged.get("username"),
-                merged.get("email"),
-                merged.get("password_hash"),
-                merged.get("license_expiry_date"),
-                merged.get("updated_at"),
                 int(bool(merged.get("verified", False))),
             ),
         )
@@ -126,30 +111,6 @@ def create_or_update_profile(doctor_id: int, data: dict):
 
 def get_profile(doctor_id: int):
     return doctor_profiles.get(doctor_id)
-
-
-def get_profile_by_identifier(identifier: str):
-    normalized = str(identifier).strip()
-    if not normalized:
-        return None, None
-
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT telegram_id, name, specialty, experience, license_id, license_file_id,
-                   license_file_type, username, email, password_hash, license_expiry_date,
-                   updated_at, verified
-            FROM doctor_profiles
-            WHERE CAST(telegram_id AS TEXT) = ? OR LOWER(email) = LOWER(?)
-            """,
-            (normalized, normalized),
-        )
-        row = cursor.fetchone()
-
-    if not row:
-        return None, None
-    return row["telegram_id"], _row_to_profile(row)
 
 
 def mark_verified(doctor_id: int):

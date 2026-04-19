@@ -6,10 +6,7 @@ from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
 
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.utils import ImageReader
-from reportlab.pdfgen import canvas
+from PIL import Image, ImageDraw, ImageFont
 
 from database import get_connection
 from synmed_utils.doctor_profiles import doctor_profiles
@@ -26,11 +23,15 @@ DEFAULT_LOGO_CANDIDATES = (
     ROOT_DIR / "logo.jpg",
     ROOT_DIR / "logo.jpeg",
 )
-BRAND_BLUE = colors.HexColor("#045B76")
-BRAND_GOLD = colors.HexColor("#F0B24D")
-BRAND_DARK = colors.HexColor("#12212A")
-TEXT_DARK = colors.HexColor("#20313A")
-TEXT_MUTED = colors.HexColor("#586972")
+BRAND_BLUE = "#045B76"
+BRAND_GOLD = "#F0B24D"
+BRAND_DARK = "#12212A"
+CARD_FILL = "#F4F8FA"
+META_FILL = "#E8F0F4"
+FRAME_FILL = "#FBFDFC"
+TEXT_DARK = "#20313A"
+TEXT_MUTED = "#586972"
+CANVAS_WIDTH = 820
 
 
 def _timestamp_parts():
@@ -68,49 +69,23 @@ def _motto_text() -> str:
     return os.getenv("SYNMED_MOTTO", "").strip()
 
 
-def _doctor_signature_path(doctor_id: int) -> Path | None:
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT signature_path
-            FROM doctors
-            WHERE telegram_id = ?
-            """,
-            (doctor_id,),
-        )
-        row = cursor.fetchone()
-    if not row or not row["signature_path"]:
-        return None
+def _font(size: int, *, bold: bool = False, italic: bool = False):
+    font_candidates = []
+    if bold and italic:
+        font_candidates.extend(["arialbi.ttf", "DejaVuSans-BoldOblique.ttf"])
+    elif bold:
+        font_candidates.extend(["arialbd.ttf", "DejaVuSans-Bold.ttf"])
+    elif italic:
+        font_candidates.extend(["ariali.ttf", "DejaVuSans-Oblique.ttf"])
+    else:
+        font_candidates.extend(["arial.ttf", "DejaVuSans.ttf"])
 
-    path = Path(row["signature_path"])
-    if not path.is_absolute():
-        path = ROOT_DIR / path
-    return path if path.exists() else None
-
-
-def _relative_asset_path(filename: str) -> str:
-    return f"generated_documents/{filename}"
-
-
-def _public_asset_url(filename: str) -> str:
-    return f"/generated-documents/{filename}"
-
-
-def _absolute_asset_path(asset_path: str | None) -> Path | None:
-    if not asset_path:
-        return None
-    path = Path(asset_path)
-    if not path.is_absolute():
-        path = ROOT_DIR / asset_path
-    return path if path.exists() else None
-
-
-def _format_prescription_medications(medications: list[dict]) -> str:
-    return "\n".join(
-        f"{index}. {med['route']} {med['name']} {med['dose']} {med['duration']}"
-        for index, med in enumerate(medications, start=1)
-    )
+    for candidate in font_candidates:
+        try:
+            return ImageFont.truetype(candidate, size)
+        except OSError:
+            continue
+    return ImageFont.load_default()
 
 
 def _build_document_content(
@@ -124,7 +99,6 @@ def _build_document_content(
     notes: str,
     date_text: str,
     time_text: str,
-    extra_lines: list[str] | None = None,
 ) -> str:
     lines = [
         title,
@@ -133,148 +107,286 @@ def _build_document_content(
         f"Name: {_patient_line(patient_details, 'name')}",
         f"Age: {_patient_line(patient_details, 'age')}",
         f"Gender: {_patient_line(patient_details, 'gender')}",
-        f"Hospital Number: {_patient_line(patient_details, 'hospital_number')}",
         "",
         f"Diagnosis: {diagnosis}",
         "",
         items_label,
         items_text,
         "",
-        f"Doctor: {doctor_name}",
+        f"Prescriber: {doctor_name}",
         f"Date: {date_text}",
         f"Time: {time_text}",
     ]
-    if extra_lines:
-        lines.extend([""] + extra_lines)
     if notes:
         lines.extend(["", "Notes", notes])
     return "\n".join(lines)
 
 
-def _draw_wrapped_text(pdf: canvas.Canvas, text: str, x: float, y: float, *, width: int = 88, leading: int = 14):
-    for paragraph in str(text or "").splitlines() or [""]:
-        wrapped = textwrap.wrap(paragraph, width=width) or [""]
-        for line in wrapped:
-            pdf.drawString(x, y, line)
-            y -= leading
-    return y
+def _build_document_payload(
+    *,
+    title: str,
+    consultation_id: str,
+    patient_details: dict,
+    diagnosis: str,
+    items_label: str,
+    items_text: str,
+    doctor_name: str,
+    notes: str,
+    date_text: str,
+    time_text: str,
+):
+    hospital_number = (
+        patient_details.get("hospital_number")
+        or patient_details.get("hospital_no")
+        or patient_details.get("patient_id")
+        or "N/A"
+    )
+    return {
+        "title": title,
+        "consultation_id": consultation_id,
+        "hospital_number": str(hospital_number),
+        "patient_details": patient_details,
+        "diagnosis": diagnosis,
+        "items_label": items_label,
+        "items": [line.strip() for line in items_text.splitlines() if line.strip()],
+        "doctor_name": doctor_name,
+        "notes": notes,
+        "date_text": date_text,
+        "time_text": time_text,
+    }
 
 
-def _draw_section(pdf: canvas.Canvas, title: str, text: str, *, x: float, y: float, width: int = 88):
-    pdf.setFont("Helvetica-Bold", 11)
-    pdf.setFillColor(BRAND_BLUE)
-    pdf.drawString(x, y, title)
-    y -= 16
-    pdf.setFont("Helvetica", 10)
-    pdf.setFillColor(TEXT_DARK)
-    return _draw_wrapped_text(pdf, text, x, y, width=width)
+def _format_prescription_medications(medications: list[dict]) -> str:
+    return "\n".join(
+        f"{index}. {med['route']}  {med['name']}  {med['dose']}  {med['duration']}"
+        for index, med in enumerate(medications, start=1)
+    )
 
 
-def _render_signature(pdf: canvas.Canvas, doctor_id: int, doctor_name: str, *, x: float, y: float):
-    signature_path = _doctor_signature_path(doctor_id)
-    if signature_path:
-        try:
-            pdf.drawImage(ImageReader(str(signature_path)), x, y - 6, width=120, height=40, mask="auto")
-        except Exception:
-            pdf.setFont("Times-Italic", 14)
-            pdf.drawString(x, y + 8, doctor_name)
-    else:
-        pdf.setFont("Times-Italic", 14)
-        pdf.drawString(x, y + 8, doctor_name)
+def _wrap_line(text: str, width: int) -> list[str]:
+    text = text.strip()
+    if not text:
+        return [""]
+    return textwrap.wrap(text, width=width) or [text]
 
 
-def _create_pdf_document(*, filename: str, payload: dict) -> BytesIO:
+def _measure_multiline(lines: list[str], font, line_height: int) -> int:
+    return max(1, len(lines)) * line_height
+
+
+def _save_document_image(filename: str, payload: dict) -> BytesIO:
     GENERATED_DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
     path = GENERATED_DOCUMENTS_DIR / filename
-    pdf = canvas.Canvas(str(path), pagesize=A4)
-    width, height = A4
-    margin = 46
-    top = height - margin
 
-    pdf.setFillColor(BRAND_DARK)
-    pdf.rect(0, height - 110, width, 110, fill=1, stroke=0)
-    pdf.setFillColor(BRAND_BLUE)
-    pdf.rect(0, height - 118, width, 8, fill=1, stroke=0)
+    margin = 48
+    header_height = 182
+    section_gap = 24
+    title_font = _font(48, bold=True)
+    document_title_font = _font(24, bold=True)
+    heading_font = _font(22, bold=True)
+    subheading_font = _font(16, bold=True)
+    body_font = _font(17)
+    small_font = _font(14)
+    italic_font = _font(14, italic=True)
+    line_height = 28
+    wrap_width = 42
+    is_prescription = payload["title"].lower() == "prescription"
+    section_title = "Prescription" if is_prescription else "Requested Tests"
+    accent_label = "" if is_prescription else "Lab"
+    accent_font_size = 34
+    items_fill = "#FFF7E7" if is_prescription else "#EEF8FA"
+    items_outline = BRAND_GOLD if is_prescription else BRAND_BLUE
+    divider_color = "#E6CF94" if is_prescription else "#9FCFDD"
+    header_tint = "#D9EDF4" if is_prescription else "#E0F5F6"
+    footer_caption = "SynMed Prescription Sheet" if is_prescription else "SynMed Investigation Sheet"
+
+    diagnosis_lines = _wrap_line(payload["diagnosis"], wrap_width)
+    notes_lines = _wrap_line(payload["notes"], wrap_width) if payload["notes"] else []
+    item_lines = []
+    for item in payload["items"] or ["No items provided."]:
+        item_lines.extend(_wrap_line(item, wrap_width - 2))
+
+    patient_name_lines = _wrap_line(_patient_line(payload["patient_details"], "name"), 18)
+    age_value = _patient_line(payload["patient_details"], "age")
+    gender_value = _patient_line(payload["patient_details"], "gender")
+    hospital_number_value = payload["hospital_number"]
+
+    body_height = (
+        118
+        + max(_measure_multiline(patient_name_lines, body_font, line_height), 56)
+        + _measure_multiline(diagnosis_lines, body_font, line_height)
+        + _measure_multiline(item_lines, body_font, line_height)
+        + (_measure_multiline(notes_lines, body_font, line_height) + 64 if notes_lines else 0)
+        + 220
+    )
+    image_height = max(header_height + body_height + 260, int(CANVAS_WIDTH * 1.72))
+
+    image = Image.new("RGB", (CANVAS_WIDTH, image_height), "white")
+    draw = ImageDraw.Draw(image)
+
+    draw.rectangle((18, 18, CANVAS_WIDTH - 18, image_height - 18), outline=BRAND_GOLD, width=2)
+    draw.rectangle((28, 28, CANVAS_WIDTH - 28, image_height - 28), fill=FRAME_FILL, outline="#D8E4E9", width=2)
+    draw.rectangle((0, 0, CANVAS_WIDTH, header_height), fill=BRAND_DARK)
+    draw.rectangle((0, header_height - 10, CANVAS_WIDTH, header_height), fill=BRAND_BLUE)
 
     logo = _logo_path()
     if logo:
-        try:
-            pdf.drawImage(ImageReader(str(logo)), margin, height - 98, width=64, height=64, mask="auto")
-        except Exception:
-            pass
+      try:
+        logo_image = Image.open(logo).convert("RGBA")
+        logo_image.thumbnail((92, 92))
+        image.paste(logo_image, (margin, 24), logo_image)
+      except Exception:
+        pass
 
-    pdf.setFillColor(colors.white)
-    pdf.setFont("Helvetica-Bold", 24)
-    pdf.drawCentredString(width / 2, height - 52, "SynMed Telehealth")
+    header_title = "SynMed Telehealth"
+    header_title_width = draw.textlength(header_title, font=title_font)
+    draw.text(
+        ((CANVAS_WIDTH - header_title_width) / 2, 24),
+        header_title,
+        fill="white",
+        font=title_font,
+    )
     motto = _motto_text()
     if motto:
-        pdf.setFillColor(BRAND_GOLD)
-        pdf.setFont("Helvetica-Oblique", 10)
-        pdf.drawCentredString(width / 2, height - 68, motto)
+        motto_width = draw.textlength(motto, font=italic_font)
+        draw.text(
+            ((CANVAS_WIDTH - motto_width) / 2, 82),
+            motto,
+            fill=BRAND_GOLD,
+            font=italic_font,
+        )
+    document_title = payload["title"].upper()
+    document_title_width = draw.textlength(document_title, font=document_title_font)
+    draw.text(
+        ((CANVAS_WIDTH - document_title_width) / 2, 112),
+        document_title,
+        fill=header_tint,
+        font=document_title_font,
+    )
 
-    pdf.setFillColor(colors.white)
-    pdf.setFont("Helvetica-Bold", 14)
-    pdf.drawCentredString(width / 2, height - 88, payload["title"].upper())
+    y = header_height + 28
 
-    y = top - 94
-    pdf.setStrokeColor(colors.HexColor("#D6E1E6"))
-    pdf.setFillColor(colors.HexColor("#F7FAFC"))
-    pdf.roundRect(margin, y - 44, width - (margin * 2), 40, 10, fill=1, stroke=1)
-    pdf.setFillColor(TEXT_DARK)
-    pdf.setFont("Helvetica-Bold", 10)
-    pdf.drawString(margin + 14, y - 20, f"Document: {payload['title']}")
-    pdf.drawString(margin + 190, y - 20, f"Date: {payload['date_text']}")
-    pdf.drawString(margin + 340, y - 20, f"Time: {payload['time_text']}")
-    pdf.drawString(margin + 450, y - 20, f"Hospital No: {payload['hospital_number']}")
-    y -= 66
+    meta_top = y
+    meta_height = 76
+    meta_gap = 14
+    meta_width = CANVAS_WIDTH - (margin * 2)
+    meta_card_width = int((meta_width - (meta_gap * 2)) / 3)
+    meta_items = [
+        ("Document", payload["title"]),
+        ("Date", payload["date_text"]),
+        ("Hospital No.", payload["hospital_number"]),
+    ]
 
-    pdf.setStrokeColor(colors.HexColor("#D6E1E6"))
-    pdf.setFillColor(colors.HexColor("#F8FBFC"))
-    pdf.roundRect(margin, y - 78, width - (margin * 2), 74, 10, fill=1, stroke=1)
-    pdf.setFillColor(TEXT_DARK)
-    pdf.setFont("Helvetica-Bold", 11)
-    pdf.drawString(margin + 14, y - 18, f"Patient: {_patient_line(payload['patient_details'], 'name')}")
-    pdf.drawString(margin + 260, y - 18, f"Age: {_patient_line(payload['patient_details'], 'age')}")
-    pdf.drawString(margin + 340, y - 18, f"Gender: {_patient_line(payload['patient_details'], 'gender')}")
-    pdf.drawString(margin + 430, y - 18, f"Phone: {_patient_line(payload['patient_details'], 'phone')}")
-    pdf.setFont("Helvetica", 10)
-    history_preview = _patient_line(payload["patient_details"], "history", "N/A")
-    y = _draw_section(pdf, "History / Symptoms", history_preview, x=margin + 14, y=y - 42, width=95)
-    y -= 16
+    for index, (label, value) in enumerate(meta_items):
+        x1 = margin + (index * (meta_card_width + meta_gap))
+        x2 = x1 + meta_card_width
+        draw.rounded_rectangle((x1, meta_top, x2, meta_top + meta_height), radius=16, fill=META_FILL)
+        draw.text((x1 + 16, meta_top + 12), label.upper(), fill=BRAND_BLUE, font=small_font)
+        draw.text((x1 + 16, meta_top + 40), value, fill=TEXT_DARK, font=subheading_font)
+    y += meta_height + 18
 
-    y = _draw_section(pdf, "Diagnosis", payload["diagnosis"], x=margin, y=y, width=95)
-    y -= 18
+    def section(title: str):
+        nonlocal y
+        draw.rounded_rectangle((margin, y, margin + 260, y + 34), radius=12, fill=BRAND_BLUE)
+        draw.text((margin + 16, y + 7), title, fill="white", font=subheading_font)
+        y += 46
 
-    items_title = payload["items_label"]
-    items_text = "\n".join(payload.get("items", [])) if payload.get("items") else payload.get("items_text", "")
-    y = _draw_section(pdf, items_title, items_text, x=margin, y=y, width=95)
-    y -= 18
+    section("Patient Biodata")
+    biodata_height = max(122, 78 + _measure_multiline(patient_name_lines, body_font, line_height))
+    draw.rounded_rectangle((margin, y, CANVAS_WIDTH - margin, y + biodata_height), radius=18, fill=CARD_FILL)
+    left_col_x = margin + 24
+    right_col_x = margin + ((CANVAS_WIDTH - (margin * 2)) // 2) + 10
+    draw.text((left_col_x, y + 16), "Patient Name", fill=TEXT_MUTED, font=small_font)
+    name_y = y + 40
+    for line in patient_name_lines:
+        draw.text((left_col_x, name_y), line, fill=TEXT_DARK, font=body_font)
+        name_y += line_height
 
-    if payload.get("extra_lines"):
-        y = _draw_section(pdf, "Additional Details", "\n".join(payload["extra_lines"]), x=margin, y=y, width=95)
-        y -= 18
+    draw.text((right_col_x, y + 16), "Hospital Number", fill=TEXT_MUTED, font=small_font)
+    draw.text((right_col_x, y + 40), hospital_number_value, fill=TEXT_DARK, font=body_font)
+    draw.text((right_col_x, y + 72), "Age", fill=TEXT_MUTED, font=small_font)
+    draw.text((right_col_x + 60, y + 72), age_value, fill=TEXT_DARK, font=body_font)
+    draw.text((right_col_x + 140, y + 72), "Gender", fill=TEXT_MUTED, font=small_font)
+    draw.text((right_col_x + 220, y + 72), gender_value, fill=TEXT_DARK, font=body_font)
+    y += biodata_height + section_gap
 
-    if payload.get("notes"):
-        y = _draw_section(pdf, "Clinical Note", payload["notes"], x=margin, y=y, width=95)
-        y -= 18
+    section("Diagnosis")
+    diagnosis_height = 30 + (_measure_multiline(diagnosis_lines, body_font, line_height))
+    draw.rounded_rectangle((margin, y, CANVAS_WIDTH - margin, y + diagnosis_height), radius=18, fill=CARD_FILL)
+    text_y = y + 16
+    for line in diagnosis_lines:
+        draw.text((margin + 24, text_y), line, fill=TEXT_DARK, font=body_font)
+        text_y += line_height
+    y += diagnosis_height + section_gap
 
-    footer_y = max(100, y - 20)
-    pdf.line(margin, footer_y, margin + 140, footer_y)
-    _render_signature(pdf, payload["doctor_id"], payload["doctor_name"], x=margin, y=footer_y + 10)
-    pdf.setFont("Helvetica-Bold", 10)
-    pdf.setFillColor(TEXT_DARK)
-    pdf.drawString(margin, footer_y - 16, payload["doctor_name"])
-    pdf.setFont("Helvetica", 9)
-    pdf.setFillColor(TEXT_MUTED)
-    pdf.drawString(margin, footer_y - 30, "Doctor Name / Signature")
-    pdf.drawString(width - margin - 165, footer_y - 16, f"Issued on {payload['date_text']} at {payload['time_text']}")
-    pdf.drawString(margin, 36, "Generated by SynMed Telehealth")
+    section(payload["items_label"])
+    items_height = 76 + (_measure_multiline(item_lines, body_font, line_height))
+    draw.rounded_rectangle(
+        (margin, y, CANVAS_WIDTH - margin, y + items_height),
+        radius=22,
+        fill=items_fill,
+        outline=items_outline,
+        width=3,
+    )
+    if accent_label:
+        accent_font = _font(accent_font_size, bold=True, italic=True)
+        draw.text((margin + 22, y + 18), accent_label, fill=items_outline, font=accent_font)
+        title_x = margin + 112
+    else:
+        title_x = margin + 24
+    draw.text((title_x, y + 22), section_title, fill=BRAND_BLUE, font=heading_font)
+    draw.line((margin + 24, y + 62, CANVAS_WIDTH - margin - 24, y + 62), fill=divider_color, width=2)
+    text_y = y + 82
+    for line in item_lines:
+        draw.text((margin + 24, text_y), line, fill=TEXT_DARK, font=body_font)
+        text_y += line_height
+    y += items_height + section_gap
 
-    pdf.save()
+    if notes_lines:
+        section("Notes")
+        notes_height = 42 + (_measure_multiline(notes_lines, body_font, line_height))
+        draw.rounded_rectangle((margin, y, CANVAS_WIDTH - margin, y + notes_height), radius=18, fill=CARD_FILL)
+        text_y = y + 20
+        for line in notes_lines:
+            draw.text((margin + 24, text_y), line, fill=TEXT_DARK, font=body_font)
+            text_y += line_height
+        y += notes_height + section_gap
+
+    footer_top = y + 18
+    footer_height = 154
+    draw.rounded_rectangle(
+        (margin, footer_top, CANVAS_WIDTH - margin, footer_top + footer_height),
+        radius=20,
+        fill="#F7FAFC",
+        outline="#D4E1E8",
+        width=2,
+    )
+
+    signature_y = footer_top + 42
+    draw.line((margin + 24, signature_y, margin + 284, signature_y), fill="#C7D6DE", width=2)
+    draw.line((CANVAS_WIDTH - margin - 284, signature_y, CANVAS_WIDTH - margin - 24, signature_y), fill="#C7D6DE", width=2)
+    draw.text((margin + 24, signature_y + 12), payload["doctor_name"], fill=TEXT_DARK, font=subheading_font)
+    draw.text((margin + 24, signature_y + 42), "Prescriber Signature / Name", fill=TEXT_MUTED, font=small_font)
+    date_width = draw.textlength(payload["date_text"], font=subheading_font)
+    draw.text((CANVAS_WIDTH - margin - 24 - date_width, signature_y + 12), payload["date_text"], fill=TEXT_DARK, font=subheading_font)
+    label_width = draw.textlength("Issue Date", font=small_font)
+    draw.text((CANVAS_WIDTH - margin - 24 - label_width, signature_y + 42), "Issue Date", fill=TEXT_MUTED, font=small_font)
+    draw.text((margin + 24, footer_top + 100), footer_caption, fill=BRAND_BLUE, font=small_font)
+    draw.text((margin + 24, footer_top + 122), "Generated by SynMed Telehealth", fill=TEXT_MUTED, font=italic_font)
+
+    image.save(path, format="PNG")
     buffer = BytesIO(path.read_bytes())
     buffer.name = filename
     buffer.seek(0)
     return buffer
+
+
+def _relative_asset_path(filename: str) -> str:
+    return f"generated_documents/{filename}"
+
+
+def _public_asset_url(filename: str) -> str:
+    return f"/generated-documents/{filename}"
 
 
 def create_prescription_document(
@@ -298,6 +410,18 @@ def create_prescription_document(
         title="Prescription",
         patient_details=patient_details,
         diagnosis=diagnosis,
+        items_label="Medications",
+        items_text=medications_text,
+        doctor_name=doctor_name,
+        notes=notes,
+        date_text=date_text,
+        time_text=time_text,
+    )
+    payload = _build_document_payload(
+        title="Prescription",
+        consultation_id=consultation_id,
+        patient_details=patient_details,
+        diagnosis=diagnosis,
         items_label="Prescribed Medications",
         items_text=medications_text,
         doctor_name=doctor_name,
@@ -311,29 +435,16 @@ def create_prescription_document(
         for line in medications_text.splitlines()
         if line.strip()
     ]
-    filename = f"synmed_prescription_{consultation_id[:8]}_{rx_id[:6]}.pdf"
-    file_buffer = _create_pdf_document(
-        filename=filename,
-        payload={
-            "title": "Prescription",
-            "doctor_id": doctor_id,
-            "doctor_name": doctor_name,
-            "hospital_number": _patient_line(patient_details, "hospital_number"),
-            "patient_details": patient_details,
-            "diagnosis": diagnosis,
-            "items_label": "Prescribed Medications",
-            "items": [line.strip() for line in medications_text.splitlines() if line.strip()],
-            "items_text": medications_text,
-            "notes": notes,
-            "date_text": date_text,
-            "time_text": time_text,
-        },
-    )
+    filename = f"synmed_prescription_{consultation_id[:8]}_{rx_id[:6]}.png"
+    image_buffer = _save_document_image(filename, payload)
     asset_path = _relative_asset_path(filename)
 
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("UPDATE prescriptions SET is_latest = 0 WHERE consultation_id = ?", (consultation_id,))
+        cursor.execute(
+            "UPDATE prescriptions SET is_latest = 0 WHERE consultation_id = ?",
+            (consultation_id,),
+        )
         cursor.execute(
             """
             INSERT INTO prescriptions (
@@ -348,12 +459,17 @@ def create_prescription_document(
                 str(doctor_id),
                 str(patient_id),
                 1,
-                json.dumps({"diagnosis": diagnosis, "medications": medication_payload}),
+                json.dumps(
+                    {
+                        "diagnosis": diagnosis,
+                        "medications": medication_payload,
+                    }
+                ),
                 notes,
                 1,
                 issued_at.isoformat(),
                 asset_path,
-                "application/pdf",
+                "image/png",
             ),
         )
         conn.commit()
@@ -361,11 +477,11 @@ def create_prescription_document(
     return {
         "document_id": rx_id,
         "filename": filename,
-        "file": file_buffer,
+        "file": image_buffer,
         "content": content,
         "asset_path": asset_path,
         "asset_url": _public_asset_url(filename),
-        "asset_type": "application/pdf",
+        "asset_type": "image/png",
     }
 
 
@@ -392,25 +508,21 @@ def create_investigation_document(
         date_text=date_text,
         time_text=time_text,
     )
-    request_id = uuid4().hex
-    filename = f"synmed_investigation_{consultation_id[:8]}_{request_id[:6]}.pdf"
-    file_buffer = _create_pdf_document(
-        filename=filename,
-        payload={
-            "title": "Investigation Request",
-            "doctor_id": doctor_id,
-            "doctor_name": doctor_name,
-            "hospital_number": _patient_line(patient_details, "hospital_number"),
-            "patient_details": patient_details,
-            "diagnosis": diagnosis,
-            "items_label": "Requested Investigations",
-            "items": [line.strip() for line in tests_text.splitlines() if line.strip()],
-            "items_text": tests_text,
-            "notes": notes,
-            "date_text": date_text,
-            "time_text": time_text,
-        },
+    payload = _build_document_payload(
+        title="Investigation Request",
+        consultation_id=consultation_id,
+        patient_details=patient_details,
+        diagnosis=diagnosis,
+        items_label="Requested Investigations",
+        items_text=tests_text,
+        doctor_name=doctor_name,
+        notes=notes,
+        date_text=date_text,
+        time_text=time_text,
     )
+    request_id = uuid4().hex
+    filename = f"synmed_investigation_{consultation_id[:8]}_{request_id[:6]}.png"
+    image_buffer = _save_document_image(filename, payload)
     asset_path = _relative_asset_path(filename)
 
     with get_connection() as conn:
@@ -433,7 +545,7 @@ def create_investigation_document(
                 notes,
                 issued_at.isoformat(),
                 asset_path,
-                "application/pdf",
+                "image/png",
             ),
         )
         conn.commit()
@@ -441,285 +553,9 @@ def create_investigation_document(
     return {
         "document_id": request_id,
         "filename": filename,
-        "file": file_buffer,
+        "file": image_buffer,
         "content": content,
         "asset_path": asset_path,
         "asset_url": _public_asset_url(filename),
-        "asset_type": "application/pdf",
+        "asset_type": "image/png",
     }
-
-
-def create_referral_document(
-    *,
-    consultation_id: str,
-    doctor_id: int,
-    patient_id: int,
-    patient_details: dict,
-    diagnosis: str,
-    referral_note: str,
-    referred_hospital: str,
-):
-    issued_at, date_text, time_text = _timestamp_parts()
-    doctor_name = _doctor_display_name(doctor_id)
-    content = _build_document_content(
-        title="Referral Note",
-        patient_details=patient_details,
-        diagnosis=diagnosis,
-        items_label="Referral Note",
-        items_text=referral_note,
-        doctor_name=doctor_name,
-        notes="",
-        date_text=date_text,
-        time_text=time_text,
-        extra_lines=[f"Referred Hospital: {referred_hospital}"],
-    )
-    filename = f"synmed_referral_{consultation_id[:8]}_{uuid4().hex[:6]}.pdf"
-    file_buffer = _create_pdf_document(
-        filename=filename,
-        payload={
-            "title": "Referral Note",
-            "doctor_id": doctor_id,
-            "doctor_name": doctor_name,
-            "hospital_number": _patient_line(patient_details, "hospital_number"),
-            "patient_details": patient_details,
-            "diagnosis": diagnosis,
-            "items_label": "Referral Note",
-            "items": [line.strip() for line in referral_note.splitlines() if line.strip()],
-            "items_text": referral_note,
-            "notes": "",
-            "date_text": date_text,
-            "time_text": time_text,
-            "extra_lines": [f"Referred Hospital: {referred_hospital}"],
-        },
-    )
-    asset_path = _relative_asset_path(filename)
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            INSERT INTO clinical_letters (
-                letter_id, consultation_id, doctor_id, patient_id, document_type,
-                diagnosis, body_text, target_hospital, created_at, asset_path, asset_type
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                uuid4().hex,
-                consultation_id,
-                str(doctor_id),
-                str(patient_id),
-                "referral",
-                diagnosis,
-                referral_note,
-                referred_hospital,
-                issued_at.isoformat(),
-                asset_path,
-                "application/pdf",
-            ),
-        )
-        conn.commit()
-    return {
-        "filename": filename,
-        "file": file_buffer,
-        "content": content,
-        "asset_path": asset_path,
-        "asset_url": _public_asset_url(filename),
-        "asset_type": "application/pdf",
-    }
-
-
-def create_medical_report_document(
-    *,
-    consultation_id: str,
-    doctor_id: int,
-    patient_id: int,
-    patient_details: dict,
-    diagnosis: str,
-    report_note: str,
-):
-    issued_at, date_text, time_text = _timestamp_parts()
-    doctor_name = _doctor_display_name(doctor_id)
-    content = _build_document_content(
-        title="Medical Report",
-        patient_details=patient_details,
-        diagnosis=diagnosis,
-        items_label="Medical Report",
-        items_text=report_note,
-        doctor_name=doctor_name,
-        notes="",
-        date_text=date_text,
-        time_text=time_text,
-    )
-    filename = f"synmed_medical_report_{consultation_id[:8]}_{uuid4().hex[:6]}.pdf"
-    file_buffer = _create_pdf_document(
-        filename=filename,
-        payload={
-            "title": "Medical Report",
-            "doctor_id": doctor_id,
-            "doctor_name": doctor_name,
-            "hospital_number": _patient_line(patient_details, "hospital_number"),
-            "patient_details": patient_details,
-            "diagnosis": diagnosis,
-            "items_label": "Medical Report",
-            "items": [line.strip() for line in report_note.splitlines() if line.strip()],
-            "items_text": report_note,
-            "notes": "",
-            "date_text": date_text,
-            "time_text": time_text,
-        },
-    )
-    asset_path = _relative_asset_path(filename)
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            INSERT INTO clinical_letters (
-                letter_id, consultation_id, doctor_id, patient_id, document_type,
-                diagnosis, body_text, target_hospital, created_at, asset_path, asset_type
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                uuid4().hex,
-                consultation_id,
-                str(doctor_id),
-                str(patient_id),
-                "medical_report",
-                diagnosis,
-                report_note,
-                "",
-                issued_at.isoformat(),
-                asset_path,
-                "application/pdf",
-            ),
-        )
-        conn.commit()
-    return {
-        "filename": filename,
-        "file": file_buffer,
-        "content": content,
-        "asset_path": asset_path,
-        "asset_url": _public_asset_url(filename),
-        "asset_type": "application/pdf",
-    }
-
-
-def regenerate_prescription_document(row, patient_details: dict):
-    medications = []
-    diagnosis = "N/A"
-    try:
-        payload = json.loads(row["medication_json"] or "{}")
-        diagnosis = payload.get("diagnosis") or "N/A"
-        medications = payload.get("medications") or []
-    except (TypeError, ValueError, json.JSONDecodeError):
-        pass
-    doctor_id = int(row["doctor_id"])
-    doctor_name = _doctor_display_name(doctor_id)
-    issued_at = row["created_at"] or datetime.now(LAGOS_TZ).isoformat()
-    issued_at_value = datetime.fromisoformat(issued_at)
-    if issued_at_value.tzinfo is None:
-        issued_at_value = issued_at_value.replace(tzinfo=timezone.utc).astimezone(LAGOS_TZ)
-    else:
-        issued_at_value = issued_at_value.astimezone(LAGOS_TZ)
-    date_text = issued_at_value.strftime("%Y-%m-%d")
-    time_text = issued_at_value.strftime("%H:%M:%S")
-    medications_text = _format_prescription_medications(medications)
-    filename = f"synmed_prescription_{row['consultation_id'][:8]}_{str(row['document_id'])[:6]}.pdf"
-    file_buffer = _create_pdf_document(
-        filename=filename,
-        payload={
-            "title": "Prescription",
-            "doctor_id": doctor_id,
-            "doctor_name": doctor_name,
-            "hospital_number": _patient_line(patient_details, "hospital_number"),
-            "patient_details": patient_details,
-            "diagnosis": diagnosis,
-            "items_label": "Prescribed Medications",
-            "items": [line.strip() for line in medications_text.splitlines() if line.strip()],
-            "items_text": medications_text,
-            "notes": row["notes"] or "",
-            "date_text": date_text,
-            "time_text": time_text,
-        },
-    )
-    asset_path = _relative_asset_path(filename)
-    document = {
-        "filename": filename,
-        "file": file_buffer,
-        "asset_path": asset_path,
-        "asset_type": "application/pdf",
-        "asset_url": _public_asset_url(filename),
-    }
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            UPDATE prescriptions
-            SET asset_path = ?, asset_type = ?
-            WHERE rx_id = ?
-            """,
-            (document["asset_path"], document["asset_type"], row["document_id"]),
-        )
-        conn.commit()
-    return document
-
-
-def regenerate_investigation_document(row, patient_details: dict):
-    doctor_id = int(row["doctor_id"])
-    doctor_name = _doctor_display_name(doctor_id)
-    issued_at = row["created_at"] or datetime.now(LAGOS_TZ).isoformat()
-    issued_at_value = datetime.fromisoformat(issued_at)
-    if issued_at_value.tzinfo is None:
-        issued_at_value = issued_at_value.replace(tzinfo=timezone.utc).astimezone(LAGOS_TZ)
-    else:
-        issued_at_value = issued_at_value.astimezone(LAGOS_TZ)
-    date_text = issued_at_value.strftime("%Y-%m-%d")
-    time_text = issued_at_value.strftime("%H:%M:%S")
-    filename = f"synmed_investigation_{row['consultation_id'][:8]}_{str(row['document_id'])[:6]}.pdf"
-    file_buffer = _create_pdf_document(
-        filename=filename,
-        payload={
-            "title": "Investigation Request",
-            "doctor_id": doctor_id,
-            "doctor_name": doctor_name,
-            "hospital_number": _patient_line(patient_details, "hospital_number"),
-            "patient_details": patient_details,
-            "diagnosis": row["diagnosis"] or "N/A",
-            "items_label": "Requested Investigations",
-            "items": [line.strip() for line in (row["tests_text"] or "").splitlines() if line.strip()],
-            "items_text": row["tests_text"] or "",
-            "notes": row["notes"] or "",
-            "date_text": date_text,
-            "time_text": time_text,
-        },
-    )
-    asset_path = _relative_asset_path(filename)
-    document = {
-        "filename": filename,
-        "file": file_buffer,
-        "asset_path": asset_path,
-        "asset_type": "application/pdf",
-        "asset_url": _public_asset_url(filename),
-    }
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            UPDATE investigation_requests
-            SET asset_path = ?, asset_type = ?
-            WHERE request_id = ?
-            """,
-            (document["asset_path"], document["asset_type"], row["document_id"]),
-        )
-        conn.commit()
-    return document
-
-
-def load_existing_document_bytes(asset_path: str | None):
-    path = _absolute_asset_path(asset_path)
-    if not path:
-        return None
-    buffer = BytesIO(path.read_bytes())
-    buffer.name = path.name
-    buffer.seek(0)
-    return buffer

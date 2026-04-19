@@ -24,12 +24,10 @@ from services.paystack import (
     verify_transaction,
 )
 from services.followups import confirm_follow_up_booking, get_follow_up_by_reference, schedule_follow_up
-from services.consent import build_policy_text, has_user_agreed
 from synmed_utils.active_chats import start_chat
 from synmed_utils.admin import get_admins
 from synmed_utils.doctor_profiles import doctor_profiles, verified_badge
 from synmed_utils.doctor_ratings import get_average_rating, get_total_ratings
-from handlers.start import build_consent_keyboard
 
 
 PATIENT_STATE_KEY = "patient_flow_state"
@@ -54,8 +52,8 @@ APPOINTMENT_DATE = "appointment_date"
 APPOINTMENT_TIME = "appointment_time"
 
 PAYSTACK_CURRENCY = os.getenv("PAYSTACK_CURRENCY", "NGN")
-NEW_PATIENT_FEE = int(os.getenv("NEW_PATIENT_FEE_NGN", "5000"))
-RETURNING_PATIENT_FEE = int(os.getenv("RETURNING_PATIENT_FEE_NGN", "3000"))
+NEW_PATIENT_FEE = int(os.getenv("NEW_PATIENT_FEE_NGN", "3000"))
+RETURNING_PATIENT_FEE = int(os.getenv("RETURNING_PATIENT_FEE_NGN", "2000"))
 NEW_PATIENT_LABEL = os.getenv(
     "NEW_PATIENT_PAYMENT_LABEL",
     "SynMed Registration + Consultation Fee",
@@ -201,13 +199,6 @@ def _clear_appointment_context(context: ContextTypes.DEFAULT_TYPE):
 async def start_consult(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    if not has_user_agreed(query.from_user.id):
-        await query.message.reply_text(
-            build_policy_text(full=False),
-            reply_markup=build_consent_keyboard(),
-            parse_mode="Markdown",
-        )
-        return
     context.user_data[PATIENT_STATE_KEY] = LOOKUP
     _clear_payment_context(context)
     await query.message.reply_text(
@@ -219,13 +210,6 @@ async def start_consult(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def start_book_appointment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    if not has_user_agreed(query.from_user.id):
-        await query.message.reply_text(
-            build_policy_text(full=False),
-            reply_markup=build_consent_keyboard(),
-            parse_mode="Markdown",
-        )
-        return
     context.user_data[PATIENT_STATE_KEY] = APPOINTMENT_REFERENCE
     _clear_payment_context(context)
     _clear_appointment_context(context)

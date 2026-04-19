@@ -160,8 +160,6 @@ def init_db():
             "patient_telegram_id": "INTEGER",
             "doctor_telegram_id": "INTEGER",
             "doctor_private_notes": "TEXT",
-            "diagnosis": "TEXT",
-            "saved_at": "TEXT",
         },
     )
 
@@ -278,23 +276,6 @@ def init_db():
     )
 
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS clinical_letters (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        letter_id TEXT NOT NULL UNIQUE,
-        consultation_id TEXT NOT NULL,
-        doctor_id TEXT NOT NULL,
-        patient_id TEXT NOT NULL,
-        document_type TEXT NOT NULL,
-        diagnosis TEXT NOT NULL,
-        body_text TEXT NOT NULL,
-        target_hospital TEXT,
-        created_at TEXT NOT NULL,
-        asset_path TEXT,
-        asset_type TEXT
-    )
-    """)
-
-    cursor.execute("""
     CREATE TABLE IF NOT EXISTS doctor_ratings (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         consultation_id TEXT NOT NULL UNIQUE,
@@ -331,16 +312,6 @@ def init_db():
         verified INTEGER NOT NULL DEFAULT 0
     )
     """)
-    ensure_columns(
-        cursor,
-        "doctor_profiles",
-        {
-            "email": "TEXT",
-            "password_hash": "TEXT",
-            "license_expiry_date": "TEXT",
-            "updated_at": "TEXT",
-        },
-    )
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS pending_doctor_requests (
@@ -422,16 +393,6 @@ def init_db():
             "context_json": "TEXT",
         },
     )
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS user_consents (
-        telegram_id INTEGER PRIMARY KEY,
-        consent_version TEXT NOT NULL,
-        status TEXT NOT NULL,
-        agreed_at TEXT,
-        updated_at TEXT NOT NULL
-    )
-    """)
 
     conn.commit()
     conn.close()

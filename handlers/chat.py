@@ -6,8 +6,6 @@ from uuid import uuid4
 from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
-from handlers.clinical_documents import LETTER_DRAFT_KEY
-from handlers.doctor_notes import PENDING_NOTE_KEY, SKIP_RELAY_ONCE_KEY
 
 from synmed_utils.active_chats import (
     get_last_consultation,
@@ -83,18 +81,13 @@ async def relay_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Keep clinical document drafting private until the final file is sent.
-    if (
-        context.user_data.get(DOCUMENT_DRAFT_KEY)
-        or context.user_data.get(LETTER_DRAFT_KEY)
-        or context.user_data.get(PENDING_NOTE_KEY)
-    ):
-        return
-
-    if context.user_data.pop(SKIP_RELAY_ONCE_KEY, False):
+    if context.user_data.get(DOCUMENT_DRAFT_KEY):
         return
 
     sender_id = update.effective_user.id
-    restore_runtime_state()
+
+    if not is_in_chat(sender_id):
+        restore_runtime_state()
 
     in_consultation_chat = is_in_chat(sender_id)
     in_support_chat = is_in_support_chat(sender_id)

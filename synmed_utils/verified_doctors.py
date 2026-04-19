@@ -34,10 +34,6 @@ def is_verified(doctor_id: int) -> bool:
     return doctor_id in _query_verified_doctor_ids()
 
 
-def get_verified_doctor_ids() -> set[int]:
-    return _query_verified_doctor_ids()
-
-
 def add_verified_doctor(doctor_id: int):
     conn = get_connection()
     cursor = conn.cursor()
