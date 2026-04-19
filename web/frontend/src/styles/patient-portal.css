@@ -1,0 +1,426 @@
+.patient-shell {
+  display: grid;
+  gap: 1.8rem;
+}
+
+.patient-shell__hero {
+  display: grid;
+  gap: 1.35rem;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.95fr);
+}
+
+.patient-shell__intro,
+.patient-shell__summary,
+.entry-panel,
+.history-card,
+.entry-action-card,
+.patient-action-zone {
+  backdrop-filter: blur(16px);
+  background:
+    linear-gradient(180deg, rgba(14, 32, 41, 0.96) 0%, rgba(10, 23, 30, 0.92) 100%);
+  border: 1px solid rgba(79, 111, 123, 0.26);
+  box-shadow: var(--shadow-card);
+}
+
+.patient-shell__intro,
+.patient-shell__summary {
+  border-radius: 32px;
+  padding: 2rem;
+}
+
+.workspace-hero__eyebrow {
+  color: var(--color-accent);
+  display: inline-block;
+  font-size: 0.84rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.45rem;
+  text-transform: uppercase;
+}
+
+.patient-shell__intro h1 {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 4vw, 3.3rem);
+  line-height: 1;
+  margin: 0.4rem 0 0.9rem;
+  max-width: 12ch;
+}
+
+.patient-shell__intro p,
+.patient-shell__summary p,
+.workspace-copy,
+.entry-panel p,
+.history-card p {
+  color: var(--color-muted);
+  max-width: 60ch;
+}
+
+.patient-shell__auth-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  margin-top: 1.5rem;
+}
+
+.patient-shell__highlights {
+  color: #a8bec7;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem 1rem;
+  margin-top: 1.35rem;
+}
+
+.patient-shell__highlights span {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 999px;
+  padding: 0.55rem 0.85rem;
+}
+
+.patient-shell__summary h2 {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  margin: 0.4rem 0 1rem;
+}
+
+.patient-shell__summary-grid,
+.patient-profile-grid {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.patient-shell__summary-grid dt,
+.patient-profile-grid dt {
+  color: var(--color-muted);
+  font-size: 0.82rem;
+  margin-bottom: 0.3rem;
+  text-transform: uppercase;
+}
+
+.patient-shell__summary-grid dd,
+.patient-profile-grid dd {
+  margin: 0;
+}
+
+.patient-shell__history-link {
+  color: var(--color-accent);
+  display: inline-flex;
+  font-weight: 700;
+  margin-top: 1.1rem;
+}
+
+.patient-shell__history-link--button {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+}
+
+.workspace-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding-inline: 0.15rem;
+}
+
+.workspace-nav__link {
+  background: rgba(14, 32, 41, 0.62);
+  border: 1px solid rgba(94, 130, 142, 0.18);
+  border-radius: 999px;
+  color: var(--color-muted);
+  padding: 0.72rem 1.05rem;
+}
+
+.workspace-nav__link--active {
+  background: rgba(243, 181, 74, 0.14);
+  border-color: rgba(243, 181, 74, 0.35);
+  color: var(--color-accent);
+}
+
+.workspace-nav__link--button {
+  cursor: pointer;
+}
+
+.workspace-nav__link--logout {
+  background: rgba(136, 46, 57, 0.2);
+  border-color: rgba(207, 96, 108, 0.3);
+  color: #ffd7dc;
+}
+
+.patient-account-grid {
+  display: grid;
+  gap: 1.4rem;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+}
+
+.patient-history-preview {
+  align-items: end;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.6rem;
+  padding-top: 1.15rem;
+}
+
+.workspace-pill {
+  background: rgba(243, 181, 74, 0.12);
+  border-radius: 999px;
+  color: var(--color-accent);
+  display: inline-flex;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 0.38rem 0.7rem;
+  text-transform: uppercase;
+}
+
+.patient-history-preview p {
+  color: white;
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  margin: 0.7rem 0 0;
+}
+
+.patient-action-zone {
+  border-radius: 30px;
+  display: grid;
+  gap: 1.35rem;
+  grid-column: 1 / -1;
+  padding: 1.8rem;
+}
+
+.patient-action-zone__heading {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.patient-action-zone__heading h2 {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 0.98;
+  margin: 0;
+  max-width: 12ch;
+}
+
+.patient-action-zone__heading p {
+  color: var(--color-muted);
+  margin: 0;
+  max-width: 60ch;
+}
+
+.entry-action-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.entry-action-card {
+  border-radius: 22px;
+  color: var(--color-ink);
+  cursor: pointer;
+  min-height: 190px;
+  padding: 1.35rem;
+  text-align: left;
+}
+
+.entry-action-card--active {
+  background:
+    linear-gradient(180deg, rgba(0, 95, 123, 0.22) 0%, rgba(10, 23, 30, 0.92) 100%);
+  border-color: rgba(243, 181, 74, 0.38);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.24);
+}
+
+.entry-action-card h3,
+.entry-panel h3,
+.history-card h3 {
+  font-family: var(--font-display);
+  margin: 0 0 0.6rem;
+}
+
+.entry-action-card p {
+  color: var(--color-muted);
+  margin: 0;
+}
+
+.entry-panel {
+  border-radius: 26px;
+  margin-top: 0.25rem;
+  padding: 1.5rem;
+}
+
+.patient-action-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+
+.history-list {
+  display: grid;
+  gap: 0.9rem;
+  margin-top: 1rem;
+}
+
+.history-table {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1rem;
+}
+
+.history-table__row {
+  align-items: center;
+  backdrop-filter: blur(16px);
+  background:
+    linear-gradient(180deg, rgba(14, 32, 41, 0.96) 0%, rgba(10, 23, 30, 0.92) 100%);
+  border: 1px solid rgba(79, 111, 123, 0.26);
+  border-radius: 22px;
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: 1.1fr 1fr auto;
+  padding: 1rem 1.1rem;
+}
+
+.history-table__label {
+  color: var(--color-muted);
+  display: block;
+  font-size: 0.78rem;
+  margin-bottom: 0.35rem;
+  text-transform: uppercase;
+}
+
+.history-preview {
+  display: grid;
+  gap: 1rem;
+}
+
+.history-preview__grid {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.history-preview__section {
+  backdrop-filter: blur(16px);
+  background:
+    linear-gradient(180deg, rgba(14, 32, 41, 0.96) 0%, rgba(10, 23, 30, 0.92) 100%);
+  border: 1px solid rgba(79, 111, 123, 0.26);
+  border-radius: 22px;
+  padding: 1rem 1.1rem;
+}
+
+.history-preview__section p {
+  color: var(--color-muted);
+  margin: 0;
+}
+
+.appointment-list {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1rem;
+}
+
+.appointment-card {
+  backdrop-filter: blur(16px);
+  background:
+    linear-gradient(180deg, rgba(14, 32, 41, 0.96) 0%, rgba(10, 23, 30, 0.92) 100%);
+  border: 1px solid rgba(79, 111, 123, 0.26);
+  border-radius: 22px;
+  color: var(--color-ink);
+  cursor: pointer;
+  padding: 1.15rem 1.2rem;
+  text-align: left;
+}
+
+.appointment-card--active {
+  border-color: rgba(243, 181, 74, 0.35);
+}
+
+.appointment-card__meta {
+  color: var(--color-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  justify-content: space-between;
+  margin-bottom: 0.7rem;
+}
+
+.payment-code-panel {
+  align-items: end;
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: 1fr auto;
+  margin-top: 1rem;
+}
+
+.history-card {
+  border-radius: 22px;
+  padding: 1.1rem 1.2rem;
+}
+
+.history-card__meta {
+  color: var(--color-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  justify-content: space-between;
+  margin-bottom: 0.8rem;
+}
+
+.history-card__subtle {
+  font-size: 0.92rem;
+  margin-top: 0.8rem;
+}
+
+.patient-auth-link {
+  color: var(--color-muted);
+  margin-top: 1rem;
+}
+
+.patient-auth-link a {
+  color: var(--color-accent);
+  text-decoration: underline;
+}
+
+@media (max-width: 980px) {
+  .patient-shell__hero,
+  .patient-account-grid,
+  .entry-action-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .patient-action-zone {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .patient-shell__intro,
+  .patient-shell__summary,
+  .entry-panel,
+  .history-card,
+  .entry-action-card {
+    border-radius: 22px;
+  }
+
+  .patient-shell__intro,
+  .patient-shell__summary {
+    padding: 1.3rem;
+  }
+
+  .patient-shell__summary-grid,
+  .patient-profile-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .payment-code-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .history-table__row,
+  .history-preview__grid {
+    grid-template-columns: 1fr;
+  }
+}

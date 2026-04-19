@@ -1,0 +1,250 @@
+.consultation-layout {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.consultation-status {
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  margin-top: 0.85rem;
+  padding: 0.9rem;
+}
+
+.consultation-status--success {
+  background: rgba(0, 95, 123, 0.14);
+}
+
+.consultation-status--loading,
+.consultation-status--idle,
+.consultation-status--empty {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.consultation-status--error {
+  background: rgba(185, 72, 52, 0.12);
+}
+
+.consultation-status__message {
+  color: var(--color-muted);
+}
+
+.consultation-header {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 0.9rem;
+}
+
+.consultation-header__item,
+.consultation-room__panel {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(243, 181, 74, 0.16);
+  border-radius: 18px;
+  padding: 0.8rem 0.95rem;
+}
+
+.consultation-header__item strong {
+  display: block;
+  margin-top: 0.2rem;
+}
+
+.consultation-room__eyebrow {
+  color: var(--color-accent);
+  display: block;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.35rem;
+  text-transform: uppercase;
+}
+
+.consultation-summary-grid {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.consultation-room__panel h3,
+.consultation-header__item strong {
+  font-size: 1rem;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.consultation-room__panel p {
+  color: var(--color-muted);
+  margin: 0.35rem 0 0;
+}
+
+.transcript-window {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1rem;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.transcript-window--large {
+  max-height: 540px;
+  min-height: 420px;
+}
+
+.transcript-document-strip {
+  display: grid;
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.transcript-document-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(243, 181, 74, 0.16);
+  border-radius: 18px;
+  padding: 0.8rem 0.95rem;
+}
+
+.transcript-bubble {
+  border: 1px solid rgba(31, 57, 68, 0.95);
+  border-radius: 18px;
+  max-width: 78%;
+  padding: 0.9rem 1rem;
+}
+
+.transcript-bubble--patient {
+  background: rgba(243, 181, 74, 0.12);
+  justify-self: end;
+}
+
+.transcript-bubble--doctor {
+  background: rgba(0, 95, 123, 0.18);
+}
+
+.transcript-bubble__role,
+.transcript-bubble__time {
+  color: var(--color-muted);
+  display: block;
+  font-size: 0.78rem;
+}
+
+.transcript-bubble__role {
+  margin-bottom: 0.35rem;
+  text-transform: uppercase;
+}
+
+.transcript-bubble__asset {
+  border-radius: 12px;
+  display: block;
+  margin: 0.35rem 0 0.75rem;
+  max-height: 280px;
+  max-width: 100%;
+}
+
+.transcript-bubble__link {
+  color: var(--color-accent);
+  display: inline-block;
+  margin: 0.35rem 0 0.75rem;
+  text-decoration: underline;
+}
+
+.transcript-bubble__time {
+  margin-top: 0.45rem;
+}
+
+.consultation-compose {
+  margin-top: 1rem;
+}
+
+.consultation-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 0.9rem;
+  position: sticky;
+  bottom: 0;
+  padding-top: 0.5rem;
+  background: linear-gradient(180deg, rgba(7, 20, 26, 0), rgba(7, 20, 26, 0.95) 45%);
+}
+
+.document-gallery {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  margin-top: 1rem;
+}
+
+.document-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(243, 181, 74, 0.16);
+  border-radius: 20px;
+  overflow: hidden;
+  padding: 0.9rem;
+}
+
+.document-card__meta p {
+  color: var(--color-muted);
+  margin-bottom: 0.75rem;
+}
+
+.document-card__image {
+  border-radius: 14px;
+  display: block;
+  width: 100%;
+}
+
+.document-card__actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.9rem;
+}
+
+.document-card__actions .button {
+  flex: 1;
+}
+
+.consultation-stars {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.3rem;
+}
+
+.consultation-stars__star {
+  background: transparent;
+  border: 0;
+  color: rgba(243, 181, 74, 0.35);
+  cursor: pointer;
+  font-size: 2rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.consultation-stars__star--active {
+  color: var(--color-accent);
+}
+
+.patient-shell__history-link--button {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+}
+
+.patient-profile-grid--account {
+  margin-top: 1rem;
+}
+
+@media (max-width: 900px) {
+  .consultation-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .consultation-header {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .consultation-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .transcript-window--large {
+    min-height: 320px;
+  }
+}

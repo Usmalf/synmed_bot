@@ -1,0 +1,13 @@
+.page-grid {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.page-grid--two {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.page-stack {
+  display: grid;
+  gap: 1.5rem;
+}
