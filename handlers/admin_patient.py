@@ -24,6 +24,7 @@ from services.paystack import (
     mark_payment_verified,
 )
 from synmed_utils.admin import is_admin
+from synmed_utils.doctor_profiles import create_or_update_profile, doctor_profiles
 from synmed_utils.support_registry import is_support_approved
 
 
@@ -35,9 +36,13 @@ PATIENT_EDIT_VALUE_ACTION = "patient_edit_value"
 PATIENT_SEARCH_ACTION = "patient_record_search"
 CONSULTATION_EXPORT_ACTION = "consultation_export"
 PATIENT_EDIT_DATA_KEY = "admin_patient_edit_data"
+DOCTOR_EDIT_DATA_KEY = "admin_doctor_edit_data"
 CONSULTATION_MENU_ACTION = "consultation_menu_lookup"
 PATIENT_DOCS_MENU_ACTION = "patient_docs_menu_lookup"
 PAYMENT_ISSUES_MENU_ACTION = "payment_issues_menu_lookup"
+DOCTOR_EDIT_IDENTIFIER_ACTION = "doctor_edit_identifier"
+DOCTOR_EDIT_FIELD_ACTION = "doctor_edit_field"
+DOCTOR_EDIT_VALUE_ACTION = "doctor_edit_value"
 
 
 def has_records_access(user_id: int) -> bool:
@@ -60,6 +65,20 @@ def _document_caption(kind: str, consultation_id: str) -> str:
         "medical_report": "Medical Report",
     }.get(kind, kind.replace("_", " ").title())
     return f"{label} | Consultation {consultation_id[:8]}"
+
+
+def _doctor_summary(doctor_id: int, profile: dict | None) -> str:
+    profile = profile or {}
+    return (
+        "Doctor Profile\n\n"
+        f"Telegram ID: {doctor_id}\n"
+        f"Name: {profile.get('name', 'N/A')}\n"
+        f"Specialty: {profile.get('specialty', 'N/A')}\n"
+        f"Experience: {profile.get('experience', 'N/A')}\n"
+        f"License ID: {profile.get('license_id', 'N/A')}\n"
+        f"Username: @{profile.get('username', 'N/A')}\n"
+        f"Verified: {'Yes' if profile.get('verified') else 'No'}"
+    )
 
 
 def _consultation_menu_keyboard(identifier: str) -> InlineKeyboardMarkup:
@@ -359,6 +378,57 @@ async def handle_admin_followup(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
 
+    if pending_action == DOCTOR_EDIT_IDENTIFIER_ACTION:
+        raw_identifier = update.message.text.strip()
+        try:
+            doctor_id = int(raw_identifier)
+        except ValueError:
+            await update.message.reply_text("Enter a valid doctor Telegram ID.")
+            return
+
+        profile = doctor_profiles.get(doctor_id)
+        if not profile:
+            await update.message.reply_text("Doctor profile not found.")
+            return
+
+        context.user_data[ADMIN_PENDING_ACTION_KEY] = DOCTOR_EDIT_FIELD_ACTION
+        context.user_data[DOCTOR_EDIT_DATA_KEY] = {
+            "doctor_id": doctor_id,
+        }
+        await update.message.reply_text(
+            f"{_doctor_summary(doctor_id, profile)}\n\n"
+            "Which field do you want to edit?\n"
+            "Reply with one of: name, specialty, experience, license_id, username, verified."
+        )
+        return
+
+    if pending_action == DOCTOR_EDIT_FIELD_ACTION:
+        field = update.message.text.strip().lower()
+        allowed_fields = {
+            "name",
+            "specialty",
+            "experience",
+            "license_id",
+            "username",
+            "verified",
+        }
+        if field not in allowed_fields:
+            await update.message.reply_text(
+                "Invalid field. Reply with one of: name, specialty, experience, license_id, username, verified."
+            )
+            return
+
+        edit_data = context.user_data.get(DOCTOR_EDIT_DATA_KEY, {})
+        edit_data["field"] = field
+        context.user_data[DOCTOR_EDIT_DATA_KEY] = edit_data
+        context.user_data[ADMIN_PENDING_ACTION_KEY] = DOCTOR_EDIT_VALUE_ACTION
+        await update.message.reply_text(
+            f"Enter the new value for `{field}`.\n"
+            "For `verified`, use `yes` or `no`.",
+            parse_mode="Markdown",
+        )
+        return
+
     if pending_action == PATIENT_EDIT_VALUE_ACTION:
         edit_data = context.user_data.get(PATIENT_EDIT_DATA_KEY, {})
         identifier = edit_data.get("identifier")
@@ -394,6 +464,51 @@ async def handle_admin_followup(update: Update, context: ContextTypes.DEFAULT_TY
             target_id=patient["hospital_number"],
             details=f"Updated field: {field}",
         )
+        return
+
+    if pending_action == DOCTOR_EDIT_VALUE_ACTION:
+        edit_data = context.user_data.get(DOCTOR_EDIT_DATA_KEY, {})
+        doctor_id = edit_data.get("doctor_id")
+        field = edit_data.get("field")
+        if doctor_id is None or not field:
+            context.user_data.pop(ADMIN_PENDING_ACTION_KEY, None)
+            context.user_data.pop(DOCTOR_EDIT_DATA_KEY, None)
+            await update.message.reply_text("Doctor edit session expired.")
+            return
+
+        profile = doctor_profiles.get(doctor_id)
+        if not profile:
+            context.user_data.pop(ADMIN_PENDING_ACTION_KEY, None)
+            context.user_data.pop(DOCTOR_EDIT_DATA_KEY, None)
+            await update.message.reply_text("Doctor profile not found.")
+            return
+
+        raw_value = update.message.text.strip()
+        if field == "verified":
+            normalized = raw_value.lower()
+            if normalized not in {"yes", "no", "true", "false", "1", "0"}:
+                await update.message.reply_text("For verified, use `yes` or `no`.", parse_mode="Markdown")
+                return
+            value = normalized in {"yes", "true", "1"}
+        else:
+            value = raw_value
+
+        create_or_update_profile(doctor_id, {field: value})
+        context.user_data.pop(ADMIN_PENDING_ACTION_KEY, None)
+        context.user_data.pop(DOCTOR_EDIT_DATA_KEY, None)
+        updated_profile = doctor_profiles.get(doctor_id)
+        await update.message.reply_text(
+            "Doctor profile updated.\n\n"
+            f"{_doctor_summary(doctor_id, updated_profile)}"
+        )
+        log_admin_action(
+            admin_id=update.effective_user.id,
+            action="edit_doctor_profile",
+            target_type="doctor",
+            target_id=str(doctor_id),
+            details=f"Updated field: {field}",
+        )
+        return
 
 
 async def edit_patient_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):

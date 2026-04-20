@@ -11,10 +11,15 @@ from handlers.admin_ops import format_analytics_text
 from services.patient_records import get_registered_patient_count
 from handlers.admin_patient import (
     ADMIN_PENDING_ACTION_KEY,
+    CONSULTATION_MENU_ACTION,
     CONSULTATION_EXPORT_ACTION,
+    DOCTOR_EDIT_DATA_KEY,
+    DOCTOR_EDIT_IDENTIFIER_ACTION,
+    PATIENT_DOCS_MENU_ACTION,
     PATIENT_EDIT_DATA_KEY,
     PATIENT_EDIT_IDENTIFIER_ACTION,
     PATIENT_LOOKUP_ACTION,
+    PAYMENT_ISSUES_MENU_ACTION,
     PATIENT_SEARCH_ACTION,
 )
 from synmed_utils.pending_doctors import pending_doctors
@@ -45,11 +50,21 @@ def build_admin_dashboard():
             InlineKeyboardButton("Edit Patient", callback_data="admin:edit_patient"),
         ],
         [
+            InlineKeyboardButton("Edit Doctor", callback_data="admin:edit_doctor"),
+        ],
+        [
             InlineKeyboardButton("Search Records", callback_data="admin:search_records"),
             InlineKeyboardButton("Export Consultation", callback_data="admin:export_consultation"),
         ],
         [
+            InlineKeyboardButton("Consultation", callback_data="admin:consultation_menu"),
+            InlineKeyboardButton("Patient Docs", callback_data="admin:patient_docs_menu"),
+        ],
+        [
+            InlineKeyboardButton("Payment Issues", callback_data="admin:payment_issues_menu"),
             InlineKeyboardButton("Audit Log", callback_data="admin:audit_log"),
+        ],
+        [
             InlineKeyboardButton("Refresh", callback_data="admin:refresh"),
         ],
         [
@@ -154,6 +169,10 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             keyboard.append([
                 InlineKeyboardButton(
+                    "Edit",
+                    callback_data=f"admin:edit_doctor_prefill:{doc_id}",
+                ),
+                InlineKeyboardButton(
                     "View License",
                     callback_data=f"admin:view_license:{doc_id}",
                 ),
@@ -209,10 +228,50 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    if action == "admin:edit_doctor":
+        context.user_data[ADMIN_PENDING_ACTION_KEY] = DOCTOR_EDIT_IDENTIFIER_ACTION
+        context.user_data.pop(DOCTOR_EDIT_DATA_KEY, None)
+        await query.edit_message_text(
+            "Enter the doctor's Telegram ID to edit the profile."
+        )
+        return
+
+    if action.startswith("admin:edit_doctor_prefill:"):
+        doctor_id = int(action.split(":")[-1])
+        context.user_data[ADMIN_PENDING_ACTION_KEY] = DOCTOR_EDIT_IDENTIFIER_ACTION
+        context.user_data.pop(DOCTOR_EDIT_DATA_KEY, None)
+        await query.edit_message_text(
+            f"Editing doctor `{doctor_id}`.\n\n"
+            "Please send the same doctor Telegram ID to continue.",
+            parse_mode="Markdown",
+        )
+        return
+
     if action == "admin:export_consultation":
         context.user_data[ADMIN_PENDING_ACTION_KEY] = CONSULTATION_EXPORT_ACTION
         await query.edit_message_text(
             "Enter the consultation ID or patient hospital number to export the latest consultation record."
+        )
+        return
+
+    if action == "admin:consultation_menu":
+        context.user_data[ADMIN_PENDING_ACTION_KEY] = CONSULTATION_MENU_ACTION
+        await query.edit_message_text(
+            "Enter the consultation ID or patient hospital number."
+        )
+        return
+
+    if action == "admin:patient_docs_menu":
+        context.user_data[ADMIN_PENDING_ACTION_KEY] = PATIENT_DOCS_MENU_ACTION
+        await query.edit_message_text(
+            "Enter the consultation ID or patient hospital number to open document options."
+        )
+        return
+
+    if action == "admin:payment_issues_menu":
+        context.user_data[ADMIN_PENDING_ACTION_KEY] = PAYMENT_ISSUES_MENU_ACTION
+        await query.edit_message_text(
+            "Enter the patient hospital number for the payment issue."
         )
         return
 
