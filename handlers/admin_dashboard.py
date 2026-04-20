@@ -19,8 +19,8 @@ from handlers.admin_patient import (
 )
 from synmed_utils.pending_doctors import pending_doctors
 from synmed_utils.verified_doctors import (
+    get_verified_doctor_ids,
     remove_verified_doctor,
-    verified_doctors,
 )
 
 
@@ -29,6 +29,7 @@ def build_admin_dashboard():
     busy_doctors = set(active_chats.values())
     online_doctors = idle_doctors | busy_doctors
     patient_count = get_registered_patient_count()
+    verified_doctor_ids = get_verified_doctor_ids()
 
     keyboard = InlineKeyboardMarkup([
         [
@@ -67,7 +68,7 @@ def build_admin_dashboard():
     text = (
         "*SynMed Admin Dashboard*\n\n"
         f"*Pending Requests:* {len(pending_doctors)}\n"
-        f"*Verified Doctors:* {len(verified_doctors)}\n\n"
+        f"*Verified Doctors:* {len(verified_doctor_ids)}\n\n"
         f"*Registered Patients:* {patient_count}\n\n"
         f"*Online doctors (total):* {len(online_doctors)}\n"
         f"Idle: {len(idle_doctors)}\n"
@@ -124,13 +125,14 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if action == "admin:verified":
-        if not verified_doctors:
+        verified_doctor_ids = sorted(get_verified_doctor_ids())
+        if not verified_doctor_ids:
             await query.edit_message_text("No verified doctors.")
             return
 
         text = "*Verified Doctors*\n\n"
         keyboard = []
-        for doc_id in verified_doctors:
+        for doc_id in verified_doctor_ids:
             profile = doctor_profiles.get(doc_id, {})
             name = profile.get("name", "Unknown Doctor")
             status = (
@@ -169,12 +171,13 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if action == "admin:ratings":
-        if not verified_doctors:
+        verified_doctor_ids = get_verified_doctor_ids()
+        if not verified_doctor_ids:
             await query.edit_message_text("No verified doctors.")
             return
 
         doctors = sorted(
-            verified_doctors,
+            verified_doctor_ids,
             key=lambda doc_id: get_average_rating(doc_id),
             reverse=True,
         )

@@ -4,6 +4,7 @@ from telegram.ext import ContextTypes
 from synmed_utils.support_registry import (
     available_support_agents,
     is_in_support_chat,
+    is_support_approved,
     queue_support_user,
     start_support_chat,
     support_profiles,
@@ -18,8 +19,9 @@ FAQ_RESPONSES = {
     ),
     "payment": (
         "Payment Help\n\n"
-        "New patients pay NGN 3,000 for registration plus consultation.\n"
-        "Returning patients pay NGN 2,000 per consultation.\n"
+        "New patients pay NGN 5,000 total.\n"
+        "This covers NGN 2,000 for registration and NGN 3,000 for consultation.\n"
+        "Returning patients pay NGN 3,000 per consultation.\n"
         "After payment, return to Telegram and tap `I Have Paid` to continue."
     ),
     "documents": (
@@ -46,10 +48,20 @@ def _customer_care_menu() -> InlineKeyboardMarkup:
 
 
 async def customer_care_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
     text = (
         "SynMed Customer Care\n\n"
         "Choose a help topic below, or connect to a live support agent."
     )
+    if user and is_support_approved(user.id):
+        text += (
+            "\n\nSupport tools:\n"
+            "/patient_record <hospital_number_or_phone>\n"
+            "/edit_patient <hospital_number_or_phone> | <field> | <value>\n"
+            "/export_consultation <consultation_id_or_hospital_number>\n"
+            "/consultation_bundle <consultation_id_or_hospital_number>\n"
+            "/resend_docs <consultation_id_or_hospital_number> [patient]"
+        )
 
     query = getattr(update, "callback_query", None)
     if query:

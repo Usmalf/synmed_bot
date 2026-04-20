@@ -189,6 +189,43 @@ def redeem_payment_token(*, payment_token: str, patient_id: str):
     return get_payment_by_token(payment_token)
 
 
+def grant_manual_payment_override(
+    *,
+    telegram_id: int,
+    patient_id: str,
+    email: str,
+    amount: int,
+    currency: str = "NGN",
+    label: str = "SynMed Manual Payment Override",
+    patient_type: str = "returning",
+    reference: str | None = None,
+):
+    reference = reference or create_payment_reference(prefix="manual")
+    existing = get_payment_by_reference(reference)
+    if existing:
+        return mark_payment_verified(
+            reference,
+            paystack_status="manual_override",
+            patient_id=patient_id,
+        )
+
+    create_payment_record(
+        reference=reference,
+        telegram_id=telegram_id,
+        patient_id=patient_id,
+        email=email or "",
+        amount=amount,
+        currency=currency,
+        patient_type=patient_type,
+        label=label,
+    )
+    return mark_payment_verified(
+        reference,
+        paystack_status="manual_override",
+        patient_id=patient_id,
+    )
+
+
 async def initialize_transaction(
     *,
     email: str,

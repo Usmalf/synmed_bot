@@ -160,6 +160,8 @@ def init_db():
             "patient_telegram_id": "INTEGER",
             "doctor_telegram_id": "INTEGER",
             "doctor_private_notes": "TEXT",
+            "diagnosis": "TEXT",
+            "saved_at": "TEXT",
         },
     )
 
@@ -274,6 +276,34 @@ def init_db():
             "asset_type": "TEXT",
         },
     )
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS clinical_letters (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        letter_id TEXT NOT NULL UNIQUE,
+        consultation_id TEXT NOT NULL,
+        doctor_id TEXT NOT NULL,
+        patient_id TEXT NOT NULL,
+        letter_type TEXT NOT NULL,
+        diagnosis TEXT,
+        body_text TEXT NOT NULL,
+        target_hospital TEXT,
+        notes TEXT,
+        created_at TEXT NOT NULL,
+        asset_path TEXT,
+        asset_type TEXT
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS patient_consents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id INTEGER NOT NULL UNIQUE,
+        agreed_at TEXT NOT NULL,
+        policy_version TEXT NOT NULL,
+        channel TEXT NOT NULL
+    )
+    """)
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS doctor_ratings (

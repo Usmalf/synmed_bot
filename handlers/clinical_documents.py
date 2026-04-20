@@ -3,9 +3,12 @@ from telegram.ext import ContextTypes, ConversationHandler
 
 from services.clinical_documents import (
     create_investigation_document,
+    create_medical_report_document,
     create_prescription_document,
+    create_referral_document,
 )
 from services.consultation_records import log_consultation_event
+from services.consultation_records import get_consultation_diagnosis, set_consultation_diagnosis
 from synmed_utils.active_chats import get_last_consultation, get_partner, is_in_chat
 from synmed_utils.states import (
     DOC_DIAGNOSIS,
@@ -19,11 +22,16 @@ from synmed_utils.states import (
     DOC_MED_ROUTE,
     DOC_NOTES,
     DOC_REVIEW,
+    LETTER_BODY,
+    LETTER_DIAGNOSIS,
+    LETTER_REVIEW,
+    LETTER_TARGET,
 )
 from synmed_utils.verified_doctors import is_verified
 
 
 DOCUMENT_DRAFT_KEY = "clinical_document_draft"
+LETTER_DRAFT_KEY = "clinical_letter_draft"
 
 
 MEDICATION_NEXT_KEYBOARD = InlineKeyboardMarkup([
@@ -38,6 +46,11 @@ INVESTIGATION_NEXT_KEYBOARD = InlineKeyboardMarkup([
         InlineKeyboardButton("Add Another", callback_data="doc_inv:add"),
         InlineKeyboardButton("Done", callback_data="doc_inv:done"),
     ]
+])
+
+LETTER_REVIEW_KEYBOARD = InlineKeyboardMarkup([
+    [InlineKeyboardButton("Send", callback_data="letter_review:send")],
+    [InlineKeyboardButton("Cancel", callback_data="letter_review:cancel")],
 ])
 
 
@@ -140,6 +153,14 @@ async def start_investigation(update: Update, context: ContextTypes.DEFAULT_TYPE
     return await _start_document_flow(update, context, "investigation")
 
 
+async def start_referral(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    return await _start_letter_flow(update, context, "referral")
+
+
+async def start_medical_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    return await _start_letter_flow(update, context, "medical_report")
+
+
 async def cancel_document_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop(DOCUMENT_DRAFT_KEY, None)
     callback_query = getattr(update, "callback_query", None)
@@ -148,6 +169,17 @@ async def cancel_document_flow(update: Update, context: ContextTypes.DEFAULT_TYP
         await callback_query.message.reply_text("Document drafting cancelled.")
     elif update.message:
         await update.message.reply_text("Document drafting cancelled.")
+    return ConversationHandler.END
+
+
+async def cancel_letter_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.pop(LETTER_DRAFT_KEY, None)
+    callback_query = getattr(update, "callback_query", None)
+    if callback_query:
+        await callback_query.answer()
+        await callback_query.message.reply_text("Referral / report drafting cancelled.")
+    elif update.message:
+        await update.message.reply_text("Referral / report drafting cancelled.")
     return ConversationHandler.END
 
 
@@ -190,15 +222,74 @@ async def _start_document_flow(
     draft["investigations"] = []
     draft["notes"] = ""
     draft["items_text"] = ""
+    draft["diagnosis"] = get_consultation_diagnosis(draft["consultation_id"])
     context.user_data[DOCUMENT_DRAFT_KEY] = draft
 
     label = "prescription" if doc_type == "prescription" else "investigation request"
+    if draft["diagnosis"]:
+        await update.message.reply_text(
+            f"Creating a {label}.\n"
+            "Using the saved consultation diagnosis for this document.\n\n"
+            f"Diagnosis: {draft['diagnosis']}"
+        )
+        if draft["type"] == "prescription":
+            await update.message.reply_text(
+                "Enter the medication type / route.\n"
+                "Example: Tablet / Oral"
+            )
+            return DOC_MED_ROUTE
+        await update.message.reply_text(
+            "Enter the name of the first investigation.\n"
+            "Example: Full blood count"
+        )
+        return DOC_INVESTIGATION_ITEM
+
     await update.message.reply_text(
         f"Creating a {label}.\n"
         "Your draft entries will stay private until the final document is sent.\n\n"
         "Please enter the diagnosis."
     )
     return DOC_DIAGNOSIS
+
+
+async def _start_letter_flow(update: Update, context: ContextTypes.DEFAULT_TYPE, letter_type: str):
+    if not update.message:
+        return ConversationHandler.END
+
+    doctor_id = update.effective_user.id
+    if not is_verified(doctor_id):
+        await update.message.reply_text("Only verified doctors can create referral notes or medical reports.")
+        return ConversationHandler.END
+
+    if not is_in_chat(doctor_id):
+        await update.message.reply_text("You need an active consultation to create this document.")
+        return ConversationHandler.END
+
+    draft = _get_active_document_context(doctor_id)
+    if not draft:
+        await update.message.reply_text("Unable to find the current consultation record.")
+        return ConversationHandler.END
+
+    draft["type"] = letter_type
+    draft["diagnosis"] = get_consultation_diagnosis(draft["consultation_id"])
+    draft["body"] = ""
+    draft["target_hospital"] = ""
+    context.user_data[LETTER_DRAFT_KEY] = draft
+
+    label = "referral note" if letter_type == "referral" else "medical report"
+    if draft["diagnosis"]:
+        await update.message.reply_text(
+            f"Creating a {label}.\n"
+            "Using the saved consultation diagnosis for this document.\n\n"
+            f"Diagnosis: {draft['diagnosis']}"
+        )
+        await update.message.reply_text(
+            "Enter the referral note." if letter_type == "referral" else "Enter the medical report."
+        )
+        return LETTER_BODY
+
+    await update.message.reply_text(f"Creating a {label}.\n\nPlease enter the diagnosis.")
+    return LETTER_DIAGNOSIS
 
 
 async def handle_document_diagnosis(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -211,6 +302,7 @@ async def handle_document_diagnosis(update: Update, context: ContextTypes.DEFAUL
         return ConversationHandler.END
 
     draft["diagnosis"] = update.message.text.strip()
+    set_consultation_diagnosis(draft["consultation_id"], draft["diagnosis"])
     context.user_data[DOCUMENT_DRAFT_KEY] = draft
 
     if draft["type"] == "prescription":
@@ -225,6 +317,127 @@ async def handle_document_diagnosis(update: Update, context: ContextTypes.DEFAUL
         "Example: Full blood count"
     )
     return DOC_INVESTIGATION_ITEM
+
+
+async def handle_letter_diagnosis(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return LETTER_DIAGNOSIS
+
+    draft = context.user_data.get(LETTER_DRAFT_KEY)
+    if not draft:
+        await update.message.reply_text("Document session expired.")
+        return ConversationHandler.END
+
+    draft["diagnosis"] = update.message.text.strip()
+    set_consultation_diagnosis(draft["consultation_id"], draft["diagnosis"])
+    context.user_data[LETTER_DRAFT_KEY] = draft
+    await update.message.reply_text("Enter the referral note." if draft["type"] == "referral" else "Enter the medical report.")
+    return LETTER_BODY
+
+
+async def handle_letter_body(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return LETTER_BODY
+
+    draft = context.user_data.get(LETTER_DRAFT_KEY)
+    if not draft:
+        await update.message.reply_text("Document session expired.")
+        return ConversationHandler.END
+
+    draft["body"] = update.message.text.strip()
+    context.user_data[LETTER_DRAFT_KEY] = draft
+    if draft["type"] == "referral":
+        await update.message.reply_text("Enter the hospital or facility you are referring the patient to.")
+        return LETTER_TARGET
+
+    await update.message.reply_text(
+        f"Diagnosis: {draft['diagnosis']}\n\n{draft['body']}\n\nReply with send or cancel.",
+        reply_markup=LETTER_REVIEW_KEYBOARD,
+    )
+    return LETTER_REVIEW
+
+
+async def handle_letter_target(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return LETTER_TARGET
+
+    draft = context.user_data.get(LETTER_DRAFT_KEY)
+    if not draft:
+        await update.message.reply_text("Document session expired.")
+        return ConversationHandler.END
+
+    draft["target_hospital"] = update.message.text.strip()
+    context.user_data[LETTER_DRAFT_KEY] = draft
+    await update.message.reply_text(
+        f"Diagnosis: {draft['diagnosis']}\n\n{draft['body']}\n\nReferred Hospital: {draft['target_hospital']}\n\nReply with send or cancel.",
+        reply_markup=LETTER_REVIEW_KEYBOARD,
+    )
+    return LETTER_REVIEW
+
+
+async def handle_letter_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    draft = context.user_data.get(LETTER_DRAFT_KEY)
+    if not draft:
+        if update.message:
+            await update.message.reply_text("Document session expired.")
+        return ConversationHandler.END
+
+    callback_query = getattr(update, "callback_query", None)
+    if callback_query:
+        await callback_query.answer()
+        choice = callback_query.data.split(":", 1)[1]
+        await callback_query.edit_message_reply_markup(reply_markup=None)
+    elif update.message and update.message.text:
+        choice = update.message.text.strip().lower()
+    else:
+        return LETTER_REVIEW
+
+    if choice == "cancel":
+        return await cancel_letter_flow(update, context)
+
+    if choice != "send":
+        target = callback_query.message if callback_query else update.message
+        await target.reply_text("Use Send or Cancel.")
+        return LETTER_REVIEW
+
+    if draft["type"] == "referral":
+        document = create_referral_document(
+            consultation_id=draft["consultation_id"],
+            doctor_id=draft["doctor_id"],
+            patient_id=draft["patient_id"],
+            patient_details=draft["patient_details"],
+            diagnosis=draft["diagnosis"],
+            referral_note=draft["body"],
+            referred_hospital=draft["target_hospital"],
+        )
+        doc_type_label = "Referral note"
+    else:
+        document = create_medical_report_document(
+            consultation_id=draft["consultation_id"],
+            doctor_id=draft["doctor_id"],
+            patient_id=draft["patient_id"],
+            patient_details=draft["patient_details"],
+            diagnosis=draft["diagnosis"],
+            report_note=draft["body"],
+        )
+        doc_type_label = "Medical report"
+
+    await context.bot.send_document(
+        chat_id=draft["patient_id"],
+        document=document["file"],
+        filename=document["filename"],
+        caption=f"{doc_type_label} for your consultation.",
+    )
+    log_consultation_event(
+        draft["consultation_id"],
+        event_type="document_issued",
+        actor_id=str(draft["doctor_id"]),
+        details=doc_type_label,
+    )
+    target = callback_query.message if callback_query else update.message
+    await target.reply_text(f"{doc_type_label} created and sent to the patient.")
+    context.user_data.pop(LETTER_DRAFT_KEY, None)
+    return ConversationHandler.END
 
 
 async def handle_document_medication_route(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -447,9 +660,10 @@ async def handle_document_review(update: Update, context: ContextTypes.DEFAULT_T
             doc_type_label = "Investigation request"
 
         if draft["patient_details"].get("source") != "web":
-            await context.bot.send_photo(
+            await context.bot.send_document(
                 chat_id=draft["patient_id"],
-                photo=document["file"],
+                document=document["file"],
+                filename=document["filename"],
                 caption=f"{doc_type_label} for your consultation.",
             )
         log_consultation_event(

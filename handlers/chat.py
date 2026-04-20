@@ -12,12 +12,16 @@ from synmed_utils.active_chats import (
     get_partner,
     is_in_chat,
     restore_runtime_state,
+    touch_chat_activity,
 )
 from synmed_utils.support_registry import get_support_partner, is_in_support_chat
 from services.consultation_records import log_consultation_message
 
 
 DOCUMENT_DRAFT_KEY = "clinical_document_draft"
+PENDING_NOTE_KEY = "pending_consultation_note"
+PENDING_SAVE_DIAGNOSIS_KEY = "pending_save_diagnosis"
+SKIP_RELAY_ONCE_KEY = "skip_relay_once"
 ROOT_DIR = Path(__file__).resolve().parent.parent
 CONSULTATION_MEDIA_DIR = ROOT_DIR / "consultation_media"
 
@@ -80,8 +84,13 @@ async def relay_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
 
+    if context.user_data.pop(SKIP_RELAY_ONCE_KEY, False):
+        return
+
     # Keep clinical document drafting private until the final file is sent.
     if context.user_data.get(DOCUMENT_DRAFT_KEY):
+        return
+    if context.user_data.get(PENDING_NOTE_KEY) or context.user_data.get(PENDING_SAVE_DIAGNOSIS_KEY):
         return
 
     sender_id = update.effective_user.id
@@ -97,6 +106,9 @@ async def relay_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     receiver_id = get_partner(sender_id) if in_consultation_chat else get_support_partner(sender_id)
     if not receiver_id:
         return
+
+    if in_consultation_chat:
+        touch_chat_activity(sender_id)
 
     await context.bot.send_chat_action(
         chat_id=receiver_id,

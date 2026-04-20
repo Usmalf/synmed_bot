@@ -24,7 +24,8 @@ from services.paystack import (
     verify_transaction,
 )
 from services.followups import confirm_follow_up_booking, get_follow_up_by_reference, schedule_follow_up
-from synmed_utils.active_chats import start_chat
+from services.consent import CONSENT_SUMMARY, consent_keyboard, has_patient_consented
+from synmed_utils.active_chats import end_chat, is_in_chat, restore_runtime_state, start_chat
 from synmed_utils.admin import get_admins
 from synmed_utils.doctor_profiles import doctor_profiles, verified_badge
 from synmed_utils.doctor_ratings import get_average_rating, get_total_ratings
@@ -52,8 +53,8 @@ APPOINTMENT_DATE = "appointment_date"
 APPOINTMENT_TIME = "appointment_time"
 
 PAYSTACK_CURRENCY = os.getenv("PAYSTACK_CURRENCY", "NGN")
-NEW_PATIENT_FEE = int(os.getenv("NEW_PATIENT_FEE_NGN", "3000"))
-RETURNING_PATIENT_FEE = int(os.getenv("RETURNING_PATIENT_FEE_NGN", "2000"))
+NEW_PATIENT_FEE = int(os.getenv("NEW_PATIENT_FEE_NGN", "5000"))
+RETURNING_PATIENT_FEE = int(os.getenv("RETURNING_PATIENT_FEE_NGN", "3000"))
 NEW_PATIENT_LABEL = os.getenv(
     "NEW_PATIENT_PAYMENT_LABEL",
     "SynMed Registration + Consultation Fee",
@@ -199,17 +200,37 @@ def _clear_appointment_context(context: ContextTypes.DEFAULT_TYPE):
 async def start_consult(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    if not has_patient_consented(query.from_user.id):
+        await query.message.reply_text(
+            CONSENT_SUMMARY,
+            reply_markup=consent_keyboard(),
+        )
+        return
+    restore_runtime_state()
+    if is_in_chat(query.from_user.id):
+        end_chat(query.from_user.id)
     context.user_data[PATIENT_STATE_KEY] = LOOKUP
     _clear_payment_context(context)
     await query.message.reply_text(
         "Reply with your hospital number or phone number to continue.\n"
-        "If this is your first visit, reply with `new`."
+        "If this is your first visit, reply with `new`.\n\n"
+        "New patient? Pay NGN 5,000 total.\n"
+        "This covers NGN 2,000 for registration and NGN 3,000 for consultation."
     )
 
 
 async def start_book_appointment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    if not has_patient_consented(query.from_user.id):
+        await query.message.reply_text(
+            CONSENT_SUMMARY,
+            reply_markup=consent_keyboard(),
+        )
+        return
+    restore_runtime_state()
+    if is_in_chat(query.from_user.id):
+        end_chat(query.from_user.id)
     context.user_data[PATIENT_STATE_KEY] = APPOINTMENT_REFERENCE
     _clear_payment_context(context)
     _clear_appointment_context(context)
@@ -834,7 +855,9 @@ async def _handle_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE, ide
     if not patient:
         await update.message.reply_text(
             "Patient record not found.\n"
-            "Reply with your hospital number or phone number again, or reply `new` to register."
+            "Reply with your hospital number or phone number again, or reply `new` to register.\n\n"
+            "New patient fee: NGN 5,000 total.\n"
+            "This covers NGN 2,000 for registration and NGN 3,000 for consultation."
         )
         return
 
@@ -849,6 +872,7 @@ async def _handle_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE, ide
             "Patient record found.\n\n"
             f"{patient_summary(patient)}\n\n"
             f"Consultation fee: NGN {RETURNING_PATIENT_FEE:,}\n"
+            "New patient note: NGN 5,000 total = NGN 2,000 registration + NGN 3,000 consultation.\n"
             "Enter your real email address to continue to payment,\n"
             "or enter a payment code from a payment made within the last 24 hours."
         )
