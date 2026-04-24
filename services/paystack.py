@@ -174,19 +174,21 @@ def get_payment_by_token(payment_token: str):
 
 
 def redeem_payment_token(*, payment_token: str, patient_id: str):
-    payment = get_payment_by_token(payment_token)
+    normalized_token = payment_token.strip().upper()
+    normalized_patient_id = patient_id.strip().upper()
+    payment = get_payment_by_token(normalized_token)
     if not payment:
         return None
     verified_at = _parse_iso_datetime(payment["verified_at"])
     if (
         payment["status"] != "verified"
-        or payment["patient_id"] != patient_id
+        or (payment["patient_id"] or "").strip().upper() != normalized_patient_id
         or verified_at is None
         or datetime.now(UTC) - verified_at > PAYMENT_TOKEN_VALIDITY
     ):
         return None
 
-    return get_payment_by_token(payment_token)
+    return get_payment_by_token(normalized_token)
 
 
 def grant_manual_payment_override(

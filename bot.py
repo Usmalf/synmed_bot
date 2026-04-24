@@ -318,10 +318,8 @@ async def maybe_show_home_menu(update, context):
     if is_in_chat(user_id) or is_in_support_chat(user_id):
         return False
 
-    prompted_users = context.bot_data.setdefault("home_prompted_users", set())
     text = (message.text or "").strip().lower()
-    if user_id not in prompted_users or text in HOME_TRIGGER_WORDS:
-        prompted_users.add(user_id)
+    if text in HOME_TRIGGER_WORDS:
         await start(update, context)
         return True
     return False

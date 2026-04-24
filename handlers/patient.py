@@ -741,8 +741,9 @@ async def handle_patient_intake(update: Update, context: ContextTypes.DEFAULT_TY
 
     if state == RETURN_EMAIL:
         patient = context.user_data.get(PATIENT_RECORD_KEY)
+        normalized_text = text.strip()
         redeemed = redeem_payment_token(
-            payment_token=text,
+            payment_token=normalized_text,
             patient_id=patient["hospital_number"],
         ) if patient else None
         if redeemed:
@@ -759,7 +760,15 @@ async def handle_patient_intake(update: Update, context: ContextTypes.DEFAULT_TY
             )
             return
 
-        if not _is_valid_email(text):
+        looks_like_payment_code = "-" in normalized_text and len(normalized_text) >= 6
+        if looks_like_payment_code:
+            await update.message.reply_text(
+                "That payment code could not be applied to this patient.\n"
+                "Please check the code and try again, or enter your email address to pay now."
+            )
+            return
+
+        if not _is_valid_email(normalized_text):
             await update.message.reply_text(
                 "Enter a valid email address to pay now, or enter a valid payment code from a payment made within the last 24 hours."
             )
@@ -768,7 +777,7 @@ async def handle_patient_intake(update: Update, context: ContextTypes.DEFAULT_TY
             update,
             context,
             patient_type="returning",
-            email=text,
+            email=normalized_text,
             amount=RETURNING_PATIENT_FEE,
             label=RETURNING_PATIENT_LABEL,
         )
