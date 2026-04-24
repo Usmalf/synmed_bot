@@ -1,6 +1,7 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
+from services.interaction_state import reset_interactive_state
 from synmed_utils.admin import is_admin
 from synmed_utils.support_registry import (
     approve_support_agent,
@@ -23,6 +24,7 @@ SUPPORT_REQUEST_ROLE = "support_request_role"
 async def request_support_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
+    reset_interactive_state(context.user_data)
 
     if is_support_approved(update.effective_user.id):
         await update.message.reply_text("You are already an approved support agent.")

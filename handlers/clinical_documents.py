@@ -7,6 +7,7 @@ from services.clinical_documents import (
     create_prescription_document,
     create_referral_document,
 )
+from services.interaction_state import reset_interactive_state
 from services.consultation_records import log_consultation_event
 from services.consultation_records import get_consultation_diagnosis, set_consultation_diagnosis
 from synmed_utils.active_chats import get_last_consultation, get_partner, is_in_chat
@@ -190,6 +191,7 @@ async def _start_document_flow(
 ):
     if not update.message:
         return ConversationHandler.END
+    reset_interactive_state(context.user_data)
 
     doctor_id = update.effective_user.id
     if not is_verified(doctor_id):
@@ -255,6 +257,7 @@ async def _start_document_flow(
 async def _start_letter_flow(update: Update, context: ContextTypes.DEFAULT_TYPE, letter_type: str):
     if not update.message:
         return ConversationHandler.END
+    reset_interactive_state(context.user_data)
 
     doctor_id = update.effective_user.id
     if not is_verified(doctor_id):

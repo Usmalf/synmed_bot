@@ -371,7 +371,7 @@ def create_application():
     app.add_handler(CommandHandler("request_support", request_support_handler))
     app.add_handler(CommandHandler("support_on", support_on_handler))
     app.add_handler(CommandHandler("support_off", support_off_handler))
-    app.add_handler(CommandHandler("end_support", end_support_handler))
+    app.add_handler(CommandHandler(["end_support", "end_customer_care", "close_support"], end_support_handler))
     app.add_handler(CommandHandler("doctor_on", doctor_on))
     app.add_handler(CommandHandler("doctor_off", doctor_off))
     app.add_handler(CommandHandler("doctor_help", doctor_help_handler))

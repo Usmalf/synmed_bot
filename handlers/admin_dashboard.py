@@ -7,6 +7,7 @@ from synmed_utils.admin import is_admin
 from synmed_utils.doctor_profiles import create_or_update_profile, doctor_profiles
 from synmed_utils.doctor_ratings import get_average_rating, get_total_ratings
 from services.admin_audit import get_recent_admin_actions, log_admin_action
+from services.interaction_state import reset_interactive_state
 from handlers.admin_ops import format_analytics_text
 from services.patient_records import get_registered_patient_count
 from handlers.admin_patient import (
@@ -98,6 +99,7 @@ async def admin_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(user.id):
         await update.message.reply_text("Admin-only command.")
         return
+    reset_interactive_state(context.user_data)
 
     text, keyboard = build_admin_dashboard()
     await update.message.reply_text(

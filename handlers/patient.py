@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes
 
 import synmed_utils.doctor_registry as registry
 from services.emergency import detect_emergency
+from services.interaction_state import reset_interactive_state
 from services.patient_records import (
     attach_telegram_id,
     get_patient_by_identifier,
@@ -200,6 +201,7 @@ def _clear_appointment_context(context: ContextTypes.DEFAULT_TYPE):
 async def start_consult(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    reset_interactive_state(context.user_data)
     if not has_patient_consented(query.from_user.id):
         await query.message.reply_text(
             CONSENT_SUMMARY,
@@ -222,6 +224,7 @@ async def start_consult(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def start_book_appointment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    reset_interactive_state(context.user_data)
     if not has_patient_consented(query.from_user.id):
         await query.message.reply_text(
             CONSENT_SUMMARY,

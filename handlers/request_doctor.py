@@ -9,6 +9,7 @@ from telegram.ext import (
     filters
 )
 
+from services.interaction_state import reset_interactive_state
 from synmed_utils.pending_doctors import pending_doctors
 from synmed_utils.doctor_profiles import create_or_update_profile, doctor_profiles
 from synmed_utils.verified_doctors import is_verified
@@ -24,6 +25,7 @@ NAME, SPECIALTY, EXPERIENCE, LICENSE, CREDENTIAL = range(5)
 # ENTRY POINT
 # ─────────────────────────────────────
 async def doctor_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    reset_interactive_state(context.user_data)
     user = update.effective_user
     doctor_id = user.id
 

@@ -8,9 +8,11 @@ from services.consent import (
     has_patient_consented,
     record_patient_consent,
 )
+from services.interaction_state import reset_interactive_state
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    reset_interactive_state(context.user_data)
     user_id = update.effective_user.id
     if not has_patient_consented(user_id):
         await update.message.reply_text(

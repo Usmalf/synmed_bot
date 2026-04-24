@@ -10,6 +10,7 @@ from handlers.admin_patient import (
     PATIENT_LOOKUP_ACTION,
     PATIENT_SEARCH_ACTION,
 )
+from services.interaction_state import reset_interactive_state
 from synmed_utils.support_registry import (
     available_support_agents,
     is_in_support_chat,
@@ -76,6 +77,7 @@ def _customer_care_menu_for_support(is_support_user: bool) -> InlineKeyboardMark
 
 
 async def customer_care_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    reset_interactive_state(context.user_data)
     user = update.effective_user
     text = (
         "SynMed Customer Care\n\n"

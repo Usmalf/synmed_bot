@@ -9,6 +9,7 @@ from services.consultation_records import (
     set_consultation_diagnosis,
     set_doctor_private_notes,
 )
+from services.interaction_state import reset_interactive_state
 from synmed_utils.active_chats import get_last_consultation, is_in_chat
 from synmed_utils.verified_doctors import is_verified
 
@@ -73,6 +74,7 @@ async def _send_saved_consultation_package(
 async def consultation_note_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
+    reset_interactive_state(context.user_data)
 
     doctor_id = update.effective_user.id
     consultation, error_message = _active_consultation_for_doctor(doctor_id)
