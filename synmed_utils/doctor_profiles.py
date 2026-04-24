@@ -72,6 +72,37 @@ class DoctorProfileStore:
 doctor_profiles = DoctorProfileStore()
 
 
+def sync_doctor_tables(doctor_id: int, data: dict):
+    existing = doctor_profiles.get(doctor_id, {})
+    merged = {**existing, **data}
+    status = "verified" if bool(merged.get("verified")) else "unverified"
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO doctors (
+                telegram_id, doctor_id, name, qualification, license_no, status, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(telegram_id) DO UPDATE SET
+                doctor_id = excluded.doctor_id,
+                name = excluded.name,
+                qualification = excluded.qualification,
+                license_no = excluded.license_no,
+                status = excluded.status
+            """,
+            (
+                doctor_id,
+                str(doctor_id),
+                merged.get("name"),
+                merged.get("specialty"),
+                merged.get("license_id"),
+                status,
+            ),
+        )
+        conn.commit()
+
+
 def create_or_update_profile(doctor_id: int, data: dict):
     existing = doctor_profiles.get(doctor_id, {})
     merged = {**existing, **data}
@@ -107,6 +138,7 @@ def create_or_update_profile(doctor_id: int, data: dict):
             ),
         )
         conn.commit()
+    sync_doctor_tables(doctor_id, merged)
 
 
 def get_profile(doctor_id: int):

@@ -24,6 +24,7 @@ from services.paystack import (
     mark_payment_verified,
 )
 from synmed_utils.admin import is_admin
+import synmed_utils.doctor_registry as doctor_registry
 from synmed_utils.doctor_profiles import create_or_update_profile, doctor_profiles
 from synmed_utils.support_registry import is_support_approved
 
@@ -494,6 +495,11 @@ async def handle_admin_followup(update: Update, context: ContextTypes.DEFAULT_TY
             value = raw_value
 
         create_or_update_profile(doctor_id, {field: value})
+        if field == "verified":
+            if value:
+                doctor_registry.restore_runtime_state()
+            else:
+                doctor_registry.remove_doctor_from_runtime(doctor_id)
         context.user_data.pop(ADMIN_PENDING_ACTION_KEY, None)
         context.user_data.pop(DOCTOR_EDIT_DATA_KEY, None)
         updated_profile = doctor_profiles.get(doctor_id)
