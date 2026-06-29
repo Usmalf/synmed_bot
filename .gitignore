@@ -19,3 +19,5 @@ consultation_media/
 doctor_application_files/
 bot_stdout.log
 bot_stderr.log
+production_seed.sql
+*_seed.sql
