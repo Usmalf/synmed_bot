@@ -1,0 +1,270 @@
+from database import get_connection
+from synmed_utils.doctor_ratings import get_average_rating, get_total_ratings
+from synmed_utils.verified_doctors import is_verified as is_db_verified
+
+
+def _row_to_profile(row):
+    if row is None:
+        return None
+    return {
+        "name": row["name"],
+        "specialty": row["specialty"],
+        "experience": row["experience"],
+        "license_id": row["license_id"],
+        "license_file_id": row["license_file_id"],
+        "license_file_type": row["license_file_type"],
+        "username": row["username"],
+        "phone": row["phone"],
+        "email": row["email"],
+        "password_hash": row["password_hash"],
+        "license_expiry_date": row["license_expiry_date"],
+        "license_file_name": row["license_file_name"],
+        "license_file_size": row["license_file_size"],
+        "license_reminder_sent_at": row["license_reminder_sent_at"],
+        "updated_at": row["updated_at"],
+        "verified": bool(row["verified"]),
+    }
+
+
+class DoctorProfileStore:
+    def __setitem__(self, doctor_id: int, data: dict):
+        create_or_update_profile(doctor_id, data)
+
+    def get(self, doctor_id: int, default=None):
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT name, specialty, experience, license_id, license_file_id,
+                       license_file_type, username, phone, email, password_hash,
+                       license_expiry_date, license_file_name, license_file_size,
+                       license_reminder_sent_at, updated_at, verified
+                FROM doctor_profiles
+                WHERE telegram_id = ?
+                """,
+                (doctor_id,),
+            )
+            row = cursor.fetchone()
+        profile = _row_to_profile(row)
+        return profile if profile is not None else default
+
+    def __contains__(self, doctor_id: int):
+        return self.get(doctor_id) is not None
+
+    def items(self):
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT telegram_id, name, specialty, experience, license_id,
+                       license_file_id, license_file_type, username, phone, email,
+                       password_hash, license_expiry_date, license_file_name,
+                       license_file_size, license_reminder_sent_at, updated_at, verified
+                FROM doctor_profiles
+                ORDER BY telegram_id
+                """
+            )
+            rows = cursor.fetchall()
+        return [(row["telegram_id"], _row_to_profile(row)) for row in rows]
+
+    def __len__(self):
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) AS total FROM doctor_profiles")
+            row = cursor.fetchone()
+        return row["total"] if row else 0
+
+    def clear(self):
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM doctor_profiles")
+            conn.commit()
+
+
+doctor_profiles = DoctorProfileStore()
+
+
+def sync_doctor_tables(doctor_id: int, data: dict):
+    existing = doctor_profiles.get(doctor_id, {})
+    merged = {**existing, **data}
+    status = "verified" if bool(merged.get("verified")) else "unverified"
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO doctors (
+                telegram_id, doctor_id, name, qualification, license_no, status, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(telegram_id) DO UPDATE SET
+                doctor_id = excluded.doctor_id,
+                name = excluded.name,
+                qualification = excluded.qualification,
+                license_no = excluded.license_no,
+                status = excluded.status
+            """,
+            (
+                doctor_id,
+                str(doctor_id),
+                merged.get("name"),
+                merged.get("specialty"),
+                merged.get("license_id"),
+                status,
+            ),
+        )
+        conn.commit()
+
+
+def create_or_update_profile(doctor_id: int, data: dict):
+    existing = doctor_profiles.get(doctor_id, {})
+    merged = {**existing, **data}
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO doctor_profiles (
+                telegram_id, name, specialty, experience, license_id,
+                license_file_id, license_file_type, username, phone, email,
+                password_hash, license_expiry_date, license_file_name,
+                license_file_size, license_reminder_sent_at, updated_at, verified
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(telegram_id) DO UPDATE SET
+                name = excluded.name,
+                specialty = excluded.specialty,
+                experience = excluded.experience,
+                license_id = excluded.license_id,
+                license_file_id = excluded.license_file_id,
+                license_file_type = excluded.license_file_type,
+                username = excluded.username,
+                phone = excluded.phone,
+                email = excluded.email,
+                password_hash = excluded.password_hash,
+                license_expiry_date = excluded.license_expiry_date,
+                license_file_name = excluded.license_file_name,
+                license_file_size = excluded.license_file_size,
+                license_reminder_sent_at = excluded.license_reminder_sent_at,
+                updated_at = excluded.updated_at,
+                verified = excluded.verified
+            """,
+            (
+                doctor_id,
+                merged.get("name"),
+                merged.get("specialty"),
+                merged.get("experience"),
+                merged.get("license_id"),
+                merged.get("license_file_id"),
+                merged.get("license_file_type"),
+                merged.get("username"),
+                merged.get("phone"),
+                merged.get("email"),
+                merged.get("password_hash"),
+                merged.get("license_expiry_date"),
+                merged.get("license_file_name"),
+                merged.get("license_file_size"),
+                merged.get("license_reminder_sent_at"),
+                merged.get("updated_at"),
+                int(bool(merged.get("verified", False))),
+            ),
+        )
+        conn.commit()
+    sync_doctor_tables(doctor_id, merged)
+
+
+def get_profile(doctor_id: int):
+    return doctor_profiles.get(doctor_id)
+
+
+def get_profile_by_identifier(identifier: str):
+    normalized = str(identifier or "").strip()
+    if not normalized:
+        return None, None
+
+    with get_connection() as conn:
+        cursor = conn.cursor()
+
+        if normalized.isdigit():
+            cursor.execute(
+                """
+                SELECT telegram_id, name, specialty, experience, license_id,
+                       license_file_id, license_file_type, username, phone, email,
+                       password_hash, license_expiry_date, license_file_name,
+                       license_file_size, license_reminder_sent_at, updated_at, verified
+                FROM doctor_profiles
+                WHERE telegram_id = ?
+                """,
+                (int(normalized),),
+            )
+            row = cursor.fetchone()
+            if row:
+                return row["telegram_id"], _row_to_profile(row)
+
+        lowered = normalized.lower()
+        cursor.execute(
+            """
+            SELECT telegram_id, name, specialty, experience, license_id,
+                   license_file_id, license_file_type, username, phone, email,
+                   password_hash, license_expiry_date, license_file_name,
+                   license_file_size, license_reminder_sent_at, updated_at, verified
+            FROM doctor_profiles
+            WHERE LOWER(COALESCE(email, '')) = ?
+               OR LOWER(COALESCE(username, '')) = ?
+            """,
+            (lowered, lowered.lstrip("@")),
+        )
+        row = cursor.fetchone()
+
+    if row:
+        return row["telegram_id"], _row_to_profile(row)
+
+    return None, None
+
+
+def mark_verified(doctor_id: int):
+    create_or_update_profile(doctor_id, {"verified": True})
+
+
+def is_verified(doctor_id: int) -> bool:
+    profile = doctor_profiles.get(doctor_id)
+    return bool(profile and profile.get("verified") is True)
+
+
+def verified_badge(doctor_id: int) -> str:
+    return " ✅ Verified" if is_db_verified(doctor_id) else ""
+
+
+def get_rating_summary(doctor_id: int) -> str:
+    avg_rating = get_average_rating(doctor_id)
+    total_reviews = get_total_ratings(doctor_id)
+
+    if total_reviews == 0:
+        return "No ratings yet"
+
+    return f"{avg_rating:.1f} star ({total_reviews} reviews)"
+
+
+def top_rated_badge(doctor_id: int) -> str:
+    avg = get_average_rating(doctor_id)
+    total = get_total_ratings(doctor_id)
+
+    if total >= 10 and avg >= 4.5:
+        return " 🏆 Top Rated"
+    return ""
+
+
+def format_doctor_intro(doctor_id: int) -> str:
+    profile = doctor_profiles.get(doctor_id, {})
+
+    name = profile.get("name", "Doctor")
+    specialty = profile.get("specialty", "N/A")
+    experience = profile.get("experience", "N/A")
+    rating_text = get_rating_summary(doctor_id)
+
+    return (
+        "You are now connected to:\n\n"
+        f"Dr. {name}{verified_badge(doctor_id)}{top_rated_badge(doctor_id)}\n"
+        f"- Specialty: {specialty}\n"
+        f"- Experience: {experience} years\n"
+        f"- Rating: {rating_text}\n\n"
+        "You may begin chatting."
+    )

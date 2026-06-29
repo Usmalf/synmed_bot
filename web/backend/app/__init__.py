@@ -1,0 +1,1 @@
+"""SynMed web backend package."""

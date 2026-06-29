@@ -1,0 +1,731 @@
+.customer-care-portal .admin-sidebar__link--active {
+  box-shadow: inset 3px 0 #78d5b7;
+}
+
+.customer-care-main {
+  max-width: 1480px;
+}
+
+.customer-care-header {
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 190px;
+}
+
+.customer-care-header h1 {
+  font-size: 1.45rem;
+}
+
+.customer-care-header span {
+  color: var(--color-muted);
+  display: block;
+  font-size: 0.82rem;
+  margin-top: 0.25rem;
+}
+
+.customer-care-header__actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.customer-care-sidebar__nav {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 1rem;
+}
+
+.customer-care-sidebar__account {
+  border-top: 1px solid rgba(105, 141, 151, 0.2);
+}
+
+.customer-care-sidebar__account button {
+  border: 1px solid rgba(245, 166, 150, 0.35);
+  border-radius: 5px;
+  min-height: 34px;
+  padding: 0.35rem 0.55rem;
+  text-align: center;
+}
+
+.customer-care-sidebar__account button:hover,
+.customer-care-sidebar__account button:focus-visible {
+  background: rgba(245, 166, 150, 0.12);
+  border-color: rgba(245, 166, 150, 0.65);
+  color: #ffffff;
+}
+
+.customer-care-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.customer-care-metrics .admin-metric {
+  min-height: 76px;
+  padding: 0.7rem;
+}
+
+.customer-care-metrics .admin-metric strong {
+  font-size: 1.35rem;
+  margin-top: 0.3rem;
+}
+
+.customer-care-overview-panel {
+  margin-top: 1rem;
+}
+
+.customer-care-overview-search {
+  max-width: 480px;
+}
+
+.customer-care-overview-search__control {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.customer-care-overview-search__control input {
+  flex: 1 1 auto;
+}
+
+.customer-care-overview-search__results article {
+  border-bottom: 1px solid rgba(91, 128, 139, 0.18);
+  color: var(--color-text);
+  display: block;
+  padding: 0.7rem;
+  text-align: left;
+  width: 100%;
+}
+
+.customer-care-overview-search__results article span {
+  color: var(--color-muted);
+  display: block;
+  font-size: 0.75rem;
+  margin-top: 0.18rem;
+}
+
+.customer-care-overview-grid {
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 0 1rem 1rem;
+}
+
+.customer-care-overview-grid--standalone {
+  padding: 0;
+}
+
+.customer-care-overview-grid button {
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(91, 128, 139, 0.2);
+  border-radius: 7px;
+  color: var(--color-text);
+  cursor: pointer;
+  display: grid;
+  gap: 0.3rem;
+  justify-items: start;
+  min-height: 104px;
+  padding: 0.85rem;
+  text-align: left;
+}
+
+.customer-care-overview-grid button:hover {
+  background: rgba(87, 183, 158, 0.12);
+  border-color: rgba(87, 183, 158, 0.35);
+}
+
+.customer-care-overview-grid span,
+.customer-care-overview-grid em {
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-style: normal;
+}
+
+.customer-care-overview-grid strong {
+  font-size: 1.55rem;
+}
+
+.customer-care-ticket-panel {
+  display: flex;
+  flex-direction: column;
+  max-height: 620px;
+}
+
+.customer-care-ticket-panel .admin-panel__header {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.customer-care-ticket-panel .admin-panel__header select {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(115, 148, 157, 0.35);
+  border-radius: 5px;
+  color: var(--color-text);
+  min-height: 36px;
+  padding: 0.45rem 0.55rem;
+}
+
+.customer-care-ticket-workspace {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(260px, 0.42fr) minmax(0, 0.58fr);
+  min-height: 0;
+}
+
+.customer-care-ticket-list {
+  display: grid;
+  align-content: start;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.customer-care-ticket-list__item {
+  border-bottom: 1px solid rgba(91, 128, 139, 0.16);
+}
+
+.customer-care-ticket-list span {
+  color: var(--color-muted);
+  display: block;
+  font-size: 0.75rem;
+  margin-top: 0.18rem;
+}
+
+.customer-care-ticket-list p {
+  color: var(--color-muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  margin: 0.4rem 0 0;
+  white-space: pre-wrap;
+}
+
+.customer-care-ticket-list__item button {
+  background: transparent;
+  border: 0;
+  color: var(--color-text);
+  cursor: pointer;
+  display: grid;
+  justify-items: start;
+  padding: 0.75rem 1rem;
+  text-align: left;
+  width: 100%;
+}
+
+.customer-care-ticket-list__item--active,
+.customer-care-ticket-list__item button:hover {
+  background: rgba(87, 183, 158, 0.1);
+}
+
+.customer-care-ticket-list__item--unread button {
+  box-shadow: inset 3px 0 #d93c35;
+}
+
+.customer-care-ticket-list__meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.18rem;
+}
+
+.customer-care-ticket-list__new {
+  background: #d93c35;
+  border-radius: 999px;
+  color: #ffffff;
+  font-size: 0.66rem;
+  font-weight: 700;
+  padding: 0.08rem 0.35rem;
+}
+
+.customer-care-ticket-detail {
+  border-left: 1px solid rgba(91, 128, 139, 0.18);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  min-height: 0;
+}
+
+.customer-care-ticket-detail > header {
+  align-items: flex-start;
+  border-bottom: 1px solid rgba(91, 128, 139, 0.18);
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.85rem 1rem;
+}
+
+.customer-care-ticket-detail h3 {
+  font-size: 1rem;
+  margin: 0.1rem 0;
+}
+
+.customer-care-ticket-detail header span,
+.customer-care-ticket-detail header p,
+.customer-care-ticket-message span,
+.customer-care-ticket-logs p,
+.customer-care-mail-row span,
+.customer-care-mail-row time {
+  color: var(--color-muted);
+  font-size: 0.74rem;
+}
+
+.customer-care-ticket-detail header button {
+  background: transparent;
+  border: 1px solid rgba(116, 155, 165, 0.42);
+  border-radius: 5px;
+  color: var(--color-text);
+  cursor: pointer;
+  min-height: 32px;
+  padding: 0.35rem 0.55rem;
+}
+
+.customer-care-ticket-thread {
+  display: grid;
+  gap: 0.45rem;
+  overflow-y: auto;
+  padding: 0.8rem;
+}
+
+.customer-care-ticket-message {
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(91, 128, 139, 0.16);
+  border-radius: 7px;
+  justify-self: start;
+  max-width: 86%;
+  padding: 0.55rem 0.65rem;
+}
+
+.customer-care-ticket-message--patient {
+  background: rgba(87, 183, 158, 0.14);
+  justify-self: end;
+}
+
+.customer-care-ticket-message p {
+  margin: 0.22rem 0 0;
+  white-space: pre-wrap;
+}
+
+.customer-care-ticket-reply {
+  border-top: 1px solid rgba(91, 128, 139, 0.18);
+  display: grid;
+  gap: 0.45rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 0.65rem;
+}
+
+.customer-care-ticket-reply textarea {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(115, 148, 157, 0.35);
+  border-radius: 5px;
+  color: var(--color-text);
+  min-height: 42px;
+  padding: 0.5rem 0.6rem;
+  resize: vertical;
+}
+
+.customer-care-ticket-logs {
+  border-top: 1px solid rgba(91, 128, 139, 0.18);
+  max-height: 86px;
+  overflow-y: auto;
+  padding: 0.55rem 0.8rem;
+}
+
+.customer-care-ticket-logs h4 {
+  font-size: 0.8rem;
+  margin: 0 0 0.25rem;
+}
+
+.customer-care-ticket-logs p {
+  margin: 0.15rem 0;
+}
+
+.customer-care-mail-panel {
+  overflow: visible;
+}
+
+.customer-care-mail-actions {
+  align-items: center;
+  display: flex;
+  gap: 0.65rem;
+}
+
+.customer-care-mail-actions span {
+  color: var(--color-muted);
+  font-size: 0.78rem;
+}
+
+.customer-care-mail-compose {
+  border-bottom: 1px solid rgba(91, 128, 139, 0.18);
+}
+
+.customer-care-mail-list {
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.customer-care-mail-row {
+  border-bottom: 1px solid rgba(91, 128, 139, 0.16);
+}
+
+.customer-care-mail-row summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+}
+
+.customer-care-mail-row--unread summary {
+  background: rgba(87, 183, 158, 0.1);
+}
+
+.customer-care-mail-row p {
+  color: var(--color-text);
+  margin: 0;
+  padding: 0 1rem 0.8rem;
+  white-space: pre-wrap;
+}
+
+.customer-care-search-panel .admin-toolbar {
+  padding-bottom: 0.3rem;
+}
+
+.customer-care-results {
+  display: grid;
+  gap: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 0 1rem 1rem;
+}
+
+.customer-care-results button,
+.customer-care-results article {
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(91, 128, 139, 0.18);
+  color: var(--color-text);
+  min-height: 64px;
+  padding: 0.7rem;
+  text-align: left;
+}
+
+.customer-care-results button {
+  cursor: pointer;
+}
+
+.customer-care-results button:hover {
+  background: rgba(87, 183, 158, 0.1);
+}
+
+.customer-care-results span,
+.customer-care-results p,
+.customer-care-consultations span,
+.customer-care-documents span,
+.customer-care-documents p,
+.customer-care-grant-dialog label span {
+  color: var(--color-muted);
+  display: block;
+  font-size: 0.75rem;
+  margin-top: 0.22rem;
+}
+
+.customer-care-grid {
+  align-items: start;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+}
+
+.customer-care-table {
+  min-width: 680px;
+}
+
+.customer-care-payment-panel {
+  display: flex;
+  flex-direction: column;
+  max-height: 520px;
+}
+
+.customer-care-payment-panel .admin-toolbar {
+  flex: 0 0 auto;
+}
+
+.customer-care-payment-table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.customer-care-payment-panel .admin-table th,
+.customer-care-payment-panel .admin-table td {
+  padding-bottom: 0.58rem;
+  padding-top: 0.58rem;
+}
+
+.customer-care-payment-panel .admin-pager {
+  flex: 0 0 auto;
+  margin-top: auto;
+}
+
+.customer-care-payment-verify {
+  display: block;
+  font-size: 0.72rem;
+  margin-top: 0.4rem;
+}
+
+.customer-care-payment-verify--success {
+  color: #65cdb1;
+}
+
+.customer-care-payment-verify--warning {
+  color: #d6a94c;
+}
+
+.customer-care-payment-verify--error {
+  color: #f5a696;
+}
+
+.customer-care-consultations {
+  display: grid;
+  max-height: 382px;
+  overflow-y: auto;
+}
+
+.customer-care-consultations article {
+  align-items: flex-start;
+  border-bottom: 1px solid rgba(91, 128, 139, 0.16);
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.8rem 1rem;
+}
+
+.customer-care-consultations article > div:last-child {
+  display: grid;
+  gap: 0.25rem;
+  justify-items: end;
+}
+
+.customer-care-documents {
+  margin-top: 1rem;
+}
+
+.customer-care-documents h3 {
+  font-size: 0.95rem;
+  margin: 0 0 0.5rem;
+}
+
+.customer-care-documents article {
+  align-items: center;
+  border-top: 1px solid rgba(91, 128, 139, 0.16);
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.7rem 0;
+}
+
+.customer-care-documents__actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: flex-end;
+}
+
+.customer-care-documents a,
+.customer-care-documents button {
+  background: transparent;
+  border: 1px solid rgba(116, 155, 165, 0.42);
+  border-radius: 5px;
+  color: #65cdb1;
+  cursor: pointer;
+  font: inherit;
+  min-height: 32px;
+  padding: 0.35rem 0.55rem;
+  text-decoration: none;
+}
+
+.customer-care-documents button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.customer-care-documents__notice {
+  font-size: 0.72rem;
+}
+
+.customer-care-documents__notice--error {
+  color: #f5a696;
+}
+
+.customer-care-documents__notice--success {
+  color: #65cdb1;
+}
+
+.customer-care-grant-dialog {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.customer-care-grant-dialog label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.customer-care-grant-dialog textarea,
+.customer-care-grant-dialog select {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(115, 148, 157, 0.35);
+  border-radius: 5px;
+  color: #e9f3f7;
+  min-height: 38px;
+  padding: 0.55rem 0.65rem;
+}
+
+.customer-care-dialog-notice {
+  border: 1px solid rgba(91, 128, 139, 0.25);
+  border-radius: 6px;
+  color: var(--color-text);
+  font-size: 0.82rem;
+  padding: 0.65rem 0.75rem;
+}
+
+.customer-care-dialog-notice--error {
+  background: rgba(184, 60, 48, 0.14);
+  border-color: rgba(232, 100, 81, 0.35);
+}
+
+.customer-care-dialog-notice--loading {
+  background: rgba(87, 183, 158, 0.1);
+}
+
+.admin-sidebar__link--disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.customer-care-accounts {
+  margin-bottom: 1rem;
+}
+
+.customer-care-account-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(280px, 0.55fr) minmax(0, 1fr);
+}
+
+.customer-care-account-list {
+  display: grid;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.customer-care-account-pager {
+  grid-column: 2;
+}
+
+.customer-care-account-list article {
+  align-items: flex-start;
+  border-bottom: 1px solid rgba(91, 128, 139, 0.16);
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.85rem 1rem;
+}
+
+.customer-care-account-list article > div:last-child {
+  align-items: flex-end;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.customer-care-account-list span {
+  color: var(--color-muted);
+  display: block;
+  font-size: 0.75rem;
+  margin-top: 0.22rem;
+}
+
+.customer-care-account-list button {
+  background: transparent;
+  border: 1px solid rgba(116, 155, 165, 0.42);
+  border-radius: 5px;
+  color: var(--color-text);
+  cursor: pointer;
+  min-height: 32px;
+  padding: 0.35rem 0.55rem;
+}
+
+body[data-background-theme="light"] .customer-care-results button,
+body[data-background-theme="light"] .customer-care-results article,
+body[data-background-theme="light"] .customer-care-ticket-message,
+body[data-background-theme="light"] .customer-care-overview-grid button {
+  background: #f7fafb;
+  border-color: rgba(20, 75, 88, 0.14);
+}
+
+body[data-background-theme="light"] .customer-care-grant-dialog textarea,
+body[data-background-theme="light"] .customer-care-grant-dialog select,
+body[data-background-theme="light"] .customer-care-ticket-panel .admin-panel__header select,
+body[data-background-theme="light"] .customer-care-ticket-reply textarea {
+  background: #f7fafb;
+  border-color: rgba(20, 75, 88, 0.18);
+  color: #173640;
+}
+
+@media (max-width: 1180px) {
+  .customer-care-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .customer-care-overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .customer-care-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-care-ticket-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-care-ticket-detail {
+    border-left: 0;
+    border-top: 1px solid rgba(91, 128, 139, 0.18);
+    min-height: 360px;
+  }
+
+  .customer-care-header {
+    padding-right: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .customer-care-overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-care-results {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-care-consultations article {
+    display: grid;
+  }
+
+  .customer-care-consultations article > div:last-child {
+    justify-items: start;
+  }
+
+  .customer-care-account-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-care-account-pager {
+    grid-column: auto;
+  }
+
+  .customer-care-account-list article {
+    display: grid;
+  }
+
+  .customer-care-account-list article > div:last-child {
+    align-items: flex-start;
+  }
+}

@@ -1,0 +1,677 @@
+import json
+from datetime import datetime, timezone
+from io import BytesIO
+
+from database import get_connection
+
+
+UTC = timezone.utc
+
+
+def _now_iso() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def start_consultation_record(consultation_id: str, *, patient_record: dict, doctor_id: int, summary: str):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT OR REPLACE INTO consultations (
+                consultation_id, patient_id, doctor_id, status, notes,
+                created_at, closed_at, patient_telegram_id, doctor_telegram_id,
+                payment_reference
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                consultation_id,
+                patient_record["hospital_number"],
+                str(doctor_id),
+                "active",
+                summary,
+                _now_iso(),
+                None,
+                patient_record.get("telegram_id"),
+                doctor_id,
+                patient_record.get("reference"),
+            ),
+        )
+        conn.commit()
+    log_consultation_event(
+        consultation_id,
+        event_type="consultation_started",
+        actor_id=str(doctor_id),
+        details=summary,
+    )
+
+
+def close_consultation_record(consultation_id: str, payment_reference: str | None = None):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE consultations
+            SET status = 'closed',
+                closed_at = ?,
+                payment_reference = COALESCE(?, payment_reference)
+            WHERE consultation_id = ?
+            """,
+            (_now_iso(), payment_reference, consultation_id),
+        )
+        conn.commit()
+    log_consultation_event(
+        consultation_id,
+        event_type="consultation_closed",
+        details="Consultation ended",
+    )
+
+
+def set_doctor_private_notes(consultation_id: str, notes: str):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE consultations
+            SET doctor_private_notes = ?
+            WHERE consultation_id = ?
+            """,
+            (notes, consultation_id),
+        )
+        conn.commit()
+    log_consultation_event(
+        consultation_id,
+        event_type="doctor_note_saved",
+        details=notes,
+    )
+
+
+def set_consultation_notes(consultation_id: str, notes: str):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE consultations
+            SET notes = ?
+            WHERE consultation_id = ?
+            """,
+            (notes, consultation_id),
+        )
+        conn.commit()
+    log_consultation_event(
+        consultation_id,
+        event_type="consultation_history_saved",
+        details=notes,
+    )
+
+
+def get_consultation_diagnosis(consultation_id: str) -> str:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT diagnosis
+            FROM consultations
+            WHERE consultation_id = ?
+            """,
+            (consultation_id,),
+        )
+        row = cursor.fetchone()
+    if not row or not row["diagnosis"]:
+        return ""
+    return row["diagnosis"].strip()
+
+
+def set_consultation_diagnosis(consultation_id: str, diagnosis: str):
+    diagnosis = diagnosis.strip()
+    if not diagnosis:
+        return
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE consultations
+            SET diagnosis = ?
+            WHERE consultation_id = ?
+            """,
+            (diagnosis, consultation_id),
+        )
+        conn.commit()
+    log_consultation_event(
+        consultation_id,
+        event_type="consultation_diagnosis_saved",
+        details=diagnosis,
+    )
+
+
+def save_consultation_snapshot(consultation_id: str):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE consultations
+            SET saved_at = ?
+            WHERE consultation_id = ?
+            """,
+            (_now_iso(), consultation_id),
+        )
+        conn.commit()
+    log_consultation_event(
+        consultation_id,
+        event_type="consultation_saved",
+        details="Consultation snapshot archived with transcript and linked documents.",
+    )
+
+
+def get_latest_consultation_bundle(identifier: str):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT consultation_id, patient_id, doctor_id, status, notes,
+                   created_at, closed_at, doctor_private_notes, diagnosis, saved_at
+            FROM consultations
+            WHERE consultation_id = ?
+               OR patient_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (identifier, identifier.upper()),
+        )
+        consultation = cursor.fetchone()
+        if not consultation:
+            return None
+
+        cursor.execute(
+            """
+            SELECT patient_id, name, age, gender, phone, address, allergy, medical_conditions
+            FROM patients
+            WHERE patient_id = ?
+            """,
+            (consultation["patient_id"],),
+        )
+        patient = cursor.fetchone()
+
+        cursor.execute(
+            """
+            SELECT id
+            FROM consultation_messages
+            WHERE consultation_id = ?
+            """,
+            (consultation["consultation_id"],),
+        )
+        messages = cursor.fetchall()
+
+        cursor.execute(
+            """
+            SELECT id
+            FROM prescriptions
+            WHERE consultation_id = ?
+            """,
+            (consultation["consultation_id"],),
+        )
+        prescriptions = cursor.fetchall()
+
+        cursor.execute(
+            """
+            SELECT id
+            FROM investigation_requests
+            WHERE consultation_id = ?
+            """,
+            (consultation["consultation_id"],),
+        )
+        investigations = cursor.fetchall()
+
+    return {
+        "consultation": consultation,
+        "patient": patient,
+        "messages": messages,
+        "prescriptions": prescriptions,
+        "investigations": investigations,
+        "letters": [],
+    }
+
+
+def log_consultation_event(consultation_id: str, *, event_type: str, actor_id: str | None = None, details: str = ""):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO consultation_timeline (
+                consultation_id, event_type, actor_id, details, created_at
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (consultation_id, event_type, actor_id, details, _now_iso()),
+        )
+        conn.commit()
+
+
+def get_consultation_timeline(identifier: str, limit: int = 30):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT consultation_id
+            FROM consultations
+            WHERE consultation_id = ?
+               OR patient_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (identifier, identifier.upper()),
+        )
+        consultation = cursor.fetchone()
+        if not consultation:
+            return None
+
+        consultation_id = consultation["consultation_id"]
+        cursor.execute(
+            """
+            SELECT event_type, actor_id, details, created_at
+            FROM consultation_timeline
+            WHERE consultation_id = ?
+            ORDER BY id ASC
+            LIMIT ?
+            """,
+            (consultation_id, limit),
+        )
+        events = cursor.fetchall()
+
+    return {"consultation_id": consultation_id, "events": events}
+
+
+def get_latest_consultation_for_feedback(patient_telegram_id: int):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT consultation_id, doctor_id, status, created_at, closed_at
+            FROM consultations
+            WHERE patient_telegram_id = ?
+              AND status = 'closed'
+            ORDER BY COALESCE(closed_at, created_at) DESC
+            LIMIT 1
+            """,
+            (patient_telegram_id,),
+        )
+        consultation = cursor.fetchone()
+
+    if not consultation:
+        return None
+
+    return {
+        "consultation_id": consultation["consultation_id"],
+        "doctor_id": int(consultation["doctor_id"]),
+        "status": consultation["status"],
+        "created_at": consultation["created_at"],
+        "closed_at": consultation["closed_at"],
+    }
+
+
+def get_consultation_for_feedback(consultation_id: str, patient_telegram_id: int):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT consultation_id, doctor_id, status, created_at, closed_at
+            FROM consultations
+            WHERE consultation_id = ?
+              AND patient_telegram_id = ?
+              AND status = 'closed'
+            LIMIT 1
+            """,
+            (consultation_id, patient_telegram_id),
+        )
+        consultation = cursor.fetchone()
+
+    if not consultation:
+        return None
+
+    return {
+        "consultation_id": consultation["consultation_id"],
+        "doctor_id": int(consultation["doctor_id"]),
+        "status": consultation["status"],
+        "created_at": consultation["created_at"],
+        "closed_at": consultation["closed_at"],
+    }
+
+
+def _build_patient_history(cursor, patient_id: str, name: str, limit: int = 5):
+    cursor.execute(
+        """
+        SELECT consultation_id, doctor_id, status, notes, created_at, closed_at, doctor_private_notes, diagnosis
+        FROM consultations
+        WHERE patient_id = ?
+        ORDER BY created_at DESC
+        LIMIT ?
+        """,
+        (patient_id, limit),
+    )
+    consultations = cursor.fetchall()
+    consultation_ids = [item["consultation_id"] for item in consultations]
+
+    if not consultation_ids:
+        return {
+            "patient_id": patient_id,
+            "name": name,
+            "consultations": consultations,
+            "prescriptions": [],
+            "investigations": [],
+            "medical_reports": [],
+        }
+
+    placeholders = ",".join("?" for _ in consultation_ids)
+
+    cursor.execute(
+        f"""
+        SELECT consultation_id, medication_json, notes, created_at
+        FROM prescriptions
+        WHERE consultation_id IN ({placeholders})
+        ORDER BY created_at DESC
+        LIMIT ?
+        """,
+        (*consultation_ids, limit),
+    )
+    raw_prescriptions = cursor.fetchall()
+
+    prescriptions = []
+    for item in raw_prescriptions:
+        diagnosis = "N/A"
+        try:
+            payload = json.loads(item["medication_json"] or "{}")
+            diagnosis = payload.get("diagnosis") or "N/A"
+        except (TypeError, ValueError, json.JSONDecodeError):
+            pass
+        prescriptions.append(
+            {
+                "consultation_id": item["consultation_id"],
+                "diagnosis": diagnosis,
+                "notes": item["notes"],
+                "created_at": item["created_at"],
+            }
+        )
+
+    cursor.execute(
+        f"""
+        SELECT consultation_id, diagnosis, tests_text, notes, created_at
+        FROM investigation_requests
+        WHERE consultation_id IN ({placeholders})
+        ORDER BY created_at DESC
+        LIMIT ?
+        """,
+        (*consultation_ids, limit),
+    )
+    investigations = cursor.fetchall()
+
+    cursor.execute(
+        f"""
+        SELECT consultation_id, diagnosis, body_text, notes, created_at, asset_path, asset_type
+        FROM clinical_letters
+        WHERE consultation_id IN ({placeholders})
+          AND letter_type = 'medical_report'
+        ORDER BY created_at DESC
+        LIMIT ?
+        """,
+        (*consultation_ids, limit),
+    )
+    medical_reports = cursor.fetchall()
+
+    return {
+        "patient_id": patient_id,
+        "name": name,
+        "consultations": consultations,
+        "prescriptions": prescriptions,
+        "investigations": investigations,
+        "medical_reports": medical_reports,
+    }
+
+
+def get_patient_history(telegram_id: int, limit: int = 5):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT patient_id, name
+            FROM patients
+            WHERE telegram_id = ?
+            """,
+            (telegram_id,),
+        )
+        patient = cursor.fetchone()
+        if not patient:
+            return None
+
+        return _build_patient_history(cursor, patient["patient_id"], patient["name"], limit)
+
+
+def get_patient_history_by_identifier(identifier: str, limit: int = 5):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT patient_id, name
+            FROM patients
+            WHERE UPPER(patient_id) = UPPER(?)
+               OR phone = ?
+            """,
+            (identifier.strip(), identifier.strip()),
+        )
+        patient = cursor.fetchone()
+        if not patient:
+            return None
+
+        return _build_patient_history(cursor, patient["patient_id"], patient["name"], limit)
+
+
+def get_consultation_document_records(identifier: str):
+    bundle = get_latest_consultation_bundle(identifier)
+    if not bundle:
+        return None
+
+    consultation_id = bundle["consultation"]["consultation_id"]
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                rx_id AS document_id,
+                rx_id AS asset_id,
+                consultation_id,
+                doctor_id,
+                patient_id,
+                medication_json,
+                notes,
+                created_at,
+                asset_path,
+                asset_type
+            FROM prescriptions
+            WHERE consultation_id = ?
+            ORDER BY created_at DESC
+            """,
+            (consultation_id,),
+        )
+        prescriptions = cursor.fetchall()
+
+        cursor.execute(
+            """
+            SELECT
+                request_id AS document_id,
+                request_id AS asset_id,
+                consultation_id,
+                doctor_id,
+                patient_id,
+                diagnosis,
+                tests_text,
+                notes,
+                created_at,
+                asset_path,
+                asset_type
+            FROM investigation_requests
+            WHERE consultation_id = ?
+            ORDER BY created_at DESC
+            """,
+            (consultation_id,),
+        )
+        investigations = cursor.fetchall()
+
+    documents = []
+    for row in prescriptions:
+        documents.append(
+            {
+                "kind": "prescription",
+                "document_id": row["document_id"],
+                "consultation_id": row["consultation_id"],
+                "created_at": row["created_at"],
+                "asset_path": row["asset_path"],
+                "asset_type": row["asset_type"],
+                "row": row,
+            }
+        )
+
+    for row in investigations:
+        documents.append(
+            {
+                "kind": "investigation",
+                "document_id": row["document_id"],
+                "consultation_id": row["consultation_id"],
+                "created_at": row["created_at"],
+                "asset_path": row["asset_path"],
+                "asset_type": row["asset_type"],
+                "row": row,
+            }
+        )
+
+    documents.sort(key=lambda item: item["created_at"], reverse=True)
+    return {
+        "consultation_id": consultation_id,
+        "patient": bundle["patient"],
+        "documents": documents,
+    }
+
+
+def log_consultation_message(
+    consultation_id: str,
+    *,
+    sender_id: int,
+    sender_role: str,
+    message_text: str,
+    asset_path: str | None = None,
+    asset_type: str | None = None,
+):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO consultation_messages (
+                consultation_id, sender_id, sender_role, message_text, asset_path, asset_type, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                consultation_id,
+                sender_id,
+                sender_role,
+                message_text,
+                asset_path,
+                asset_type,
+                _now_iso(),
+            ),
+        )
+        conn.commit()
+
+
+def export_consultation_file(identifier: str):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT consultation_id, patient_id, doctor_id, status, notes,
+                   created_at, closed_at, doctor_private_notes, diagnosis, saved_at
+            FROM consultations
+            WHERE consultation_id = ?
+               OR patient_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (identifier, identifier.upper()),
+        )
+        consultation = cursor.fetchone()
+
+        if not consultation:
+            return None
+
+        cursor.execute(
+            """
+            SELECT sender_role, sender_id, message_text, created_at
+            FROM consultation_messages
+            WHERE consultation_id = ?
+            ORDER BY id ASC
+            """,
+            (consultation["consultation_id"],),
+        )
+        messages = cursor.fetchall()
+
+        cursor.execute(
+            """
+            SELECT patient_id, name, age, gender, phone, address, allergy
+            FROM patients
+            WHERE patient_id = ?
+            """,
+            (consultation["patient_id"],),
+        )
+        patient = cursor.fetchone()
+
+    lines = [
+        "SynMed Telehealth Consultation Export",
+        "",
+        f"Consultation ID: {consultation['consultation_id']}",
+        f"Hospital Number: {consultation['patient_id']}",
+        f"Doctor ID: {consultation['doctor_id']}",
+        f"Status: {consultation['status']}",
+        f"Created At: {consultation['created_at']}",
+        f"Closed At: {consultation['closed_at'] or 'Active'}",
+        f"Saved At: {consultation['saved_at'] or 'Not explicitly saved'}",
+        f"Diagnosis: {consultation['diagnosis'] or 'Not recorded'}",
+        "",
+    ]
+
+    if patient:
+        lines.extend([
+            "Patient Biodata",
+            f"Name: {patient['name']}",
+            f"Age: {patient['age']}",
+            f"Gender: {patient['gender']}",
+            f"Phone: {patient['phone']}",
+            f"Address: {patient['address'] or 'N/A'}",
+            f"Allergy: {patient['allergy'] or 'None recorded'}",
+            "",
+        ])
+
+    lines.extend([
+        "Initial Consultation Summary",
+        consultation["notes"] or "N/A",
+        "",
+        "Doctor Private Notes",
+        consultation["doctor_private_notes"] or "None recorded",
+        "",
+        "Transcript",
+    ])
+
+    if messages:
+        for message in messages:
+            lines.append(
+                f"[{message['created_at']}] {message['sender_role']} ({message['sender_id']}): {message['message_text']}"
+            )
+    else:
+        lines.append("No chat transcript recorded.")
+
+    content = "\n".join(lines) + "\n"
+    buffer = BytesIO(content.encode("utf-8"))
+    buffer.name = f"consultation_{consultation['consultation_id'][:8]}.txt"
+    buffer.seek(0)
+    return {
+        "consultation_id": consultation["consultation_id"],
+        "file": buffer,
+        "filename": buffer.name,
+    }

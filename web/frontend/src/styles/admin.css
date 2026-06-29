@@ -1,0 +1,251 @@
+.admin-dashboard {
+  display: grid;
+  gap: 1.4rem;
+}
+
+.admin-dashboard .section-card {
+  scroll-margin-top: 88px;
+}
+
+.admin-dashboard__hero,
+.admin-dashboard__session-card,
+.admin-state,
+.metric-card,
+.admin-list__item {
+  backdrop-filter: blur(16px);
+  background:
+    linear-gradient(180deg, rgba(14, 32, 41, 0.96) 0%, rgba(10, 23, 30, 0.92) 100%);
+  border: 1px solid rgba(79, 111, 123, 0.26);
+  box-shadow: var(--shadow-card);
+}
+
+.admin-dashboard__hero {
+  border-radius: 32px;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  padding: 1.2rem;
+}
+
+.admin-dashboard__intro,
+.admin-dashboard__session-card {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.admin-dashboard__intro {
+  padding: 1.35rem;
+}
+
+.admin-dashboard__intro h1 {
+  font-family: var(--font-display);
+  font-size: clamp(2.2rem, 4vw, 3.5rem);
+  line-height: 0.94;
+  margin: 0;
+  max-width: 11ch;
+}
+
+.admin-dashboard__intro p,
+.admin-dashboard__session-card p,
+.metric-card__label,
+.doctor-state__message {
+  color: var(--color-muted);
+}
+
+.admin-dashboard__session-card {
+  border-radius: 26px;
+  padding: 1.35rem;
+}
+
+.admin-dashboard__session-card h2 {
+  font-family: var(--font-display);
+  margin: 0;
+}
+
+.admin-dashboard__session-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+}
+
+.admin-dashboard__layout {
+  display: grid;
+  gap: 1.2rem;
+  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
+}
+
+.admin-dashboard__main,
+.admin-dashboard__rail {
+  display: grid;
+  gap: 1.2rem;
+}
+
+.admin-state {
+  border-radius: 20px;
+  margin-top: 1rem;
+  padding: 1rem;
+}
+
+.admin-state--success {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.admin-state--loading,
+.admin-state--idle,
+.admin-state--empty {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.admin-state--error {
+  background: rgba(185, 72, 52, 0.12);
+}
+
+.metric-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 1rem;
+}
+
+.metric-card {
+  border-radius: 20px;
+  padding: 1rem;
+}
+
+.metric-card__label {
+  display: block;
+  font-size: 0.88rem;
+  margin-bottom: 0.45rem;
+}
+
+.metric-card__value {
+  font-family: var(--font-display);
+  font-size: 2.1rem;
+  line-height: 1;
+}
+
+.admin-list {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1rem;
+}
+
+.admin-list__item {
+  align-items: center;
+  border-radius: 18px;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 1rem;
+}
+
+.admin-list__item strong {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.admin-list__item--doctor {
+  align-items: flex-start;
+}
+
+.admin-list__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  justify-content: flex-end;
+}
+
+.admin-list__reason {
+  margin-top: 0.75rem;
+}
+
+.admin-list__reason .form-field__input {
+  min-height: 72px;
+}
+
+.admin-transcript {
+  background: rgba(4, 16, 22, 0.72);
+  border: 1px solid rgba(79, 111, 123, 0.26);
+  border-radius: 8px;
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 1rem;
+  max-height: 520px;
+  overflow-y: auto;
+  padding: 0.9rem;
+}
+
+.admin-transcript__header {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+}
+
+.admin-transcript__message {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 6px;
+  padding: 0.75rem;
+}
+
+.admin-transcript__message p {
+  margin: 0.3rem 0;
+  overflow-wrap: anywhere;
+}
+
+.admin-transcript__message span {
+  color: var(--color-muted);
+  font-size: 0.78rem;
+}
+
+body[data-background-theme="light"] .admin-transcript {
+  background: rgba(245, 250, 252, 0.94);
+}
+
+body[data-background-theme="light"] .admin-transcript__message {
+  background: #ffffff;
+  border-color: rgba(12, 77, 95, 0.1);
+}
+
+@media (max-width: 980px) {
+  .admin-dashboard__hero,
+  .admin-dashboard__layout,
+  .metric-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .admin-dashboard__hero,
+  .admin-dashboard__session-card,
+  .admin-state,
+  .metric-card,
+  .admin-list__item {
+    border-radius: 22px;
+  }
+
+  .admin-dashboard__hero {
+    padding: 1rem;
+  }
+
+  .admin-dashboard__intro {
+    padding: 1.15rem;
+  }
+
+  .admin-dashboard__intro h1 {
+    max-width: 100%;
+  }
+
+  .admin-list__item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .admin-list__actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+}

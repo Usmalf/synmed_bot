@@ -1,0 +1,62 @@
+services:
+  - type: web
+    name: synmed-api
+    env: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt -r web/backend/requirements.txt
+    startCommand: uvicorn web.backend.app.main:app --host 0.0.0.0 --port $PORT
+    disk:
+      name: synmed-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: DATABASE_PATH
+        value: /var/data/synmed.db
+      - key: SYNMED_STORAGE_ROOT
+        value: /var/data/storage
+      - key: AUTH_DEV_OTP_VISIBLE
+        value: "0"
+      - key: PAYSTACK_CURRENCY
+        value: NGN
+      - key: FRONTEND_BASE_URL
+        sync: false
+      - key: AUTH_VERIFY_BASE_URL
+        sync: false
+      - key: BACKEND_CORS_ORIGINS
+        sync: false
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_IDS
+        sync: false
+      - key: AUTH_SECRET_KEY
+        generateValue: true
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: PAYSTACK_PUBLIC_KEY
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM_EMAIL
+        sync: false
+      - key: SMTP_USE_TLS
+        value: "0"
+      - key: SMTP_USE_SSL
+        value: "1"
+
+  - type: static
+    name: synmed-web
+    buildCommand: cd web/frontend && npm ci && npm run build
+    staticPublishPath: web/frontend/dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE_URL
+        sync: false

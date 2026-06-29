@@ -1,0 +1,16 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "SynMed Bot",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/bot.py",
+      "console": "integratedTerminal",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder};${workspaceFolder}\\.pydeps"
+      },
+      "python": "C:\\Program Files\\PostgreSQL\\18\\pgAdmin 4\\python\\python.exe"
+    }
+  ]
+}

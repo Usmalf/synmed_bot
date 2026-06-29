@@ -1,0 +1,193 @@
+.page-grid--patient {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.patient-account-grid {
+  display: grid;
+  gap: 1.2rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.patient-consultation-access {
+  align-content: center;
+  justify-content: center;
+  justify-items: center;
+  min-height: calc(100dvh - var(--app-header-offset, 84px) - 5rem);
+  margin-inline: auto;
+  max-width: 720px;
+  width: min(100%, 720px);
+  padding: 1rem 0;
+}
+
+.patient-consultation-access .section-card {
+  max-width: 680px;
+  padding: 1.4rem 1.45rem;
+  width: 100%;
+  margin-inline: auto;
+}
+
+.patient-consultation-access .section-card__body {
+  display: grid;
+  justify-items: center;
+}
+
+.patient-consultation-access .section-card__header {
+  text-align: center;
+  align-items: center;
+}
+
+.patient-consultation-access .section-card__title {
+  font-size: clamp(1.4rem, 1.2rem + 0.6vw, 1.85rem);
+  text-align: center;
+  width: 100%;
+}
+
+.patient-consultation-access .section-card__subtitle {
+  margin-inline: auto;
+  max-width: 62ch;
+  text-align: center;
+}
+
+.patient-consultation-access__topbar {
+  display: flex;
+  justify-content: center;
+  margin: 0.35rem 0 1rem;
+}
+
+.patient-consultation-access__topbar .button {
+  min-height: 38px;
+}
+
+.patient-consultation-access .fee-box {
+  margin-top: 1.2rem;
+  width: min(100%, 560px);
+}
+
+.patient-consultation-access .patient-profile-grid {
+  margin-top: 1.05rem;
+  width: min(100%, 600px);
+}
+
+.patient-consultation-access .lookup-result {
+  margin-top: 1.2rem;
+  padding: 1.1rem;
+  width: min(100%, 600px);
+}
+
+.patient-consultation-access .lookup-result__message {
+  font-size: 0.96rem;
+}
+
+.patient-consultation-access .payment-actions {
+  justify-content: center;
+  margin-top: 1rem;
+}
+
+.patient-consultation-access .payment-actions .button {
+  min-width: 190px;
+}
+
+body[data-background-theme="light"] .patient-consultation-access .section-card {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99) 0%, rgba(247, 251, 252, 0.98) 100%);
+  border-color: rgba(12, 77, 95, 0.08);
+  box-shadow: 0 16px 34px rgba(16, 59, 74, 0.08);
+}
+
+body[data-background-theme="light"] .patient-consultation-access .lookup-result {
+  background: rgba(248, 251, 252, 0.88);
+  border-color: rgba(12, 77, 95, 0.08);
+}
+
+.page-grid .section-card {
+  min-height: 100%;
+}
+
+.lookup-result {
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  margin-top: 1rem;
+  padding: 1rem;
+}
+
+.fee-box {
+  align-items: center;
+  background: rgba(240, 178, 77, 0.12);
+  border: 1px solid rgba(240, 178, 77, 0.35);
+  border-radius: var(--radius-md);
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+}
+
+.fee-box strong {
+  color: var(--color-ink);
+}
+
+.fee-box span {
+  color: var(--color-accent);
+  font-weight: 800;
+}
+
+body[data-background-theme="light"] .fee-box {
+  background: rgba(243, 181, 74, 0.14);
+  border-color: rgba(181, 127, 36, 0.32);
+}
+
+body[data-background-theme="light"] .fee-box strong {
+  color: #12303a;
+}
+
+body[data-background-theme="light"] .fee-box span {
+  color: #8a5607;
+}
+
+.lookup-result--success {
+  background: rgba(32, 114, 95, 0.08);
+}
+
+.lookup-result--error {
+  background: rgba(185, 72, 52, 0.08);
+}
+
+.lookup-result--loading,
+.lookup-result--idle,
+.lookup-result--empty {
+  background: rgba(24, 37, 45, 0.04);
+}
+
+.lookup-result__message {
+  color: var(--color-muted);
+}
+
+.lookup-result__details {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  margin-top: 1rem;
+}
+
+.lookup-result__details div {
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: var(--radius-sm);
+  padding: 0.8rem;
+}
+
+.lookup-result__details dt {
+  color: var(--color-muted);
+  font-size: 0.85rem;
+  margin-bottom: 0.2rem;
+}
+
+.lookup-result__details dd {
+  font-weight: 600;
+}
+
+.payment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.9rem;
+}

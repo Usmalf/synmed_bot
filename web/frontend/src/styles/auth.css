@@ -1,0 +1,85 @@
+.auth-shell {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: minmax(0, 0.9fr) minmax(300px, 0.82fr);
+}
+
+.auth-shell__intro,
+.auth-shell__aside-card,
+.auth-shell__point {
+  backdrop-filter: blur(16px);
+  background:
+    linear-gradient(180deg, rgba(14, 32, 41, 0.96) 0%, rgba(10, 23, 30, 0.92) 100%);
+  border: 1px solid rgba(79, 111, 123, 0.26);
+  box-shadow: var(--shadow-card);
+}
+
+.auth-shell__intro {
+  border-radius: 30px;
+  display: grid;
+  gap: 0.9rem;
+  padding: 1.8rem;
+}
+
+.auth-shell__intro h1 {
+  font-family: var(--font-display);
+  font-size: clamp(2.2rem, 4vw, 3.5rem);
+  line-height: 0.94;
+  margin: 0;
+  max-width: 10ch;
+}
+
+.auth-shell__intro p,
+.auth-shell__aside-card p,
+.auth-shell__point p {
+  color: var(--color-muted);
+  margin: 0;
+}
+
+.auth-shell__aside {
+  display: grid;
+  gap: 1rem;
+}
+
+.auth-shell__aside-card,
+.auth-shell__point {
+  border-radius: 26px;
+  padding: 1.3rem;
+}
+
+.auth-shell__aside-card h2,
+.auth-shell__point h3 {
+  font-family: var(--font-display);
+  margin: 0 0 0.6rem;
+}
+
+.auth-shell__points {
+  display: grid;
+  gap: 1rem;
+}
+
+.auth-shell__panel {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 980px) {
+  .auth-shell {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .auth-shell__intro,
+  .auth-shell__aside-card,
+  .auth-shell__point {
+    border-radius: 22px;
+  }
+
+  .auth-shell__intro {
+    padding: 1.35rem;
+  }
+
+  .auth-shell__intro h1 {
+    max-width: 100%;
+  }
+}
