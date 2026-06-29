@@ -49,8 +49,9 @@ services:
       - key: SMTP_USE_SSL
         value: "1"
 
-  - type: static
+  - type: web
     name: synmed-web
+    runtime: static
     buildCommand: cd web/frontend && npm ci && npm run build
     staticPublishPath: web/frontend/dist
     routes:
