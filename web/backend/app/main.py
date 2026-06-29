@@ -9,15 +9,17 @@ from fastapi.staticfiles import StaticFiles
 from . import config  # noqa: F401
 from database import init_db
 from services import storage_service
-from .routes import admin, auth, consultations, customer_care, doctors, followups, health, patients, payments
-from .services.doctor_app_service import send_due_license_expiry_reminders
 
 
 app = FastAPI(title="SynMed Web API", version="0.1.0")
 
+init_db()
 storage_service.ensure_directory("generated_documents")
 storage_service.ensure_directory("consultation_media")
 storage_service.ensure_directory("doctor_application_files")
+
+from .routes import admin, auth, consultations, customer_care, doctors, followups, health, patients, payments  # noqa: E402
+from .services.doctor_app_service import send_due_license_expiry_reminders  # noqa: E402
 
 app.add_middleware(
     CORSMiddleware,

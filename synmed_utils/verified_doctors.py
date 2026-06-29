@@ -66,6 +66,3 @@ def remove_verified_doctor(doctor_id: int):
     conn.commit()
     conn.close()
     load_verified()
-
-
-load_verified()
