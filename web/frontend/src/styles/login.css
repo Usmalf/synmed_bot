@@ -222,6 +222,21 @@ body[data-background-theme="light"] .login-page__verification--success .login-pa
   width: 18px;
 }
 
+.login-page__checkbox a {
+  color: var(--login-link);
+  font-weight: 800;
+  text-decoration: underline;
+  text-decoration-color: rgba(243, 181, 74, 0.45);
+  text-underline-offset: 0.18em;
+  transition: color 160ms ease, text-decoration-color 160ms ease;
+}
+
+.login-page__checkbox a:hover,
+.login-page__checkbox a:focus-visible {
+  color: var(--login-link-strong);
+  text-decoration-color: currentColor;
+}
+
 .login-page__status-panel {
   padding: 0.4rem 0 0.2rem;
 }
