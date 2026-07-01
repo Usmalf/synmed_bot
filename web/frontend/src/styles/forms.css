@@ -48,6 +48,18 @@
   padding-right: 3rem;
 }
 
+.password-input input[type="password"]::-ms-reveal,
+.password-input input[type="password"]::-ms-clear {
+  display: none;
+}
+
+.password-input input[type="password"]::-webkit-credentials-auto-fill-button,
+.password-input input[type="password"]::-webkit-caps-lock-indicator {
+  display: none !important;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .password-input__preview {
   align-items: center;
   background: transparent;

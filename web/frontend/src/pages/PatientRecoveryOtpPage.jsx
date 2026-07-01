@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import SectionCard from "../components/SectionCard.jsx";
 import {
   clearPendingPatientRecoveryIdentifier,
   getPendingPatientRecoveryIdentifier,
@@ -57,7 +56,9 @@ export default function PatientRecoveryOtpPage() {
           <img className="login-page__brand-logo" src="/logo-removebg-preview.png" alt="SynMed Telehealth" />
         </div>
 
-        <SectionCard title="Verify recovery code" subtitle="Enter the OTP sent to your email">
+        <div className="login-page__plain-panel">
+          <h1 className="login-page__inline-title">Verify recovery code</h1>
+          <p className="login-page__plain-subtitle">Enter the OTP sent to your email</p>
           <form className="form-panel" onSubmit={handleVerify}>
             <label className="form-field">
               <span className="form-field__label">Recovery OTP</span>
@@ -86,7 +87,7 @@ export default function PatientRecoveryOtpPage() {
               Need to start again? <Link to="/patient/recover">Back to recovery</Link>
             </p>
           </div>
-        </SectionCard>
+        </div>
       </div>
     </div>
   );

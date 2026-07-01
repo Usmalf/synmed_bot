@@ -115,6 +115,17 @@ body[data-background-theme="light"] .login-page__overlay-card {
   gap: 0.85rem;
 }
 
+.login-page__plain-panel {
+  display: grid;
+  gap: 0.95rem;
+}
+
+.login-page__plain-subtitle {
+  color: var(--login-subtle);
+  margin: -0.55rem 0 0.25rem;
+  text-align: center;
+}
+
 .login-page .lookup-result {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 18px;

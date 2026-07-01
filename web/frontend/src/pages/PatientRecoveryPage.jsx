@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import PasswordInput from "../components/PasswordInput.jsx";
-import SectionCard from "../components/SectionCard.jsx";
 import {
   requestPatientRecovery,
   setPendingPatientRecoveryIdentifier,
@@ -69,7 +68,9 @@ export default function PatientRecoveryPage() {
           <img className="login-page__brand-logo" src="/logo-removebg-preview.png" alt="SynMed Telehealth" />
         </div>
 
-        <SectionCard title="Recover your account" subtitle="Reset access with your registered email">
+        <div className="login-page__plain-panel">
+          <h1 className="login-page__inline-title">Recover your account</h1>
+          <p className="login-page__plain-subtitle">Reset access with your registered email</p>
           <form className="form-panel" onSubmit={handleSubmit}>
             <label className="form-field">
               <span className="form-field__label">Email Address</span>
@@ -118,7 +119,7 @@ export default function PatientRecoveryPage() {
               Remembered your password? <Link to="/signin">Back to sign in</Link>
             </p>
           </div>
-        </SectionCard>
+        </div>
       </div>
     </div>
   );
