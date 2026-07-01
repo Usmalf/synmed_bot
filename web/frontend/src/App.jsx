@@ -87,6 +87,7 @@ function AppNav() {
   const lastSessionActivityRef = useRef(Date.now());
   const [sessionUser, setSessionUser] = useState(null);
   const [patientMenuOpen, setPatientMenuOpen] = useState(false);
+  const [landingMenuOpen, setLandingMenuOpen] = useState(false);
 
   useEffect(() => {
     let ignore = false;
@@ -115,6 +116,7 @@ function AppNav() {
 
   useEffect(() => {
     setPatientMenuOpen(false);
+    setLandingMenuOpen(false);
   }, [location.pathname]);
 
   useEffect(() => {
@@ -306,7 +308,7 @@ function AppNav() {
   }
 
   return (
-    <nav className="top-nav" aria-label="Primary navigation">
+    <nav className={landingMenuOpen ? "top-nav top-nav--landing-open" : "top-nav"} aria-label="Primary navigation">
       <div className="top-nav__brand">
         <div className="top-nav__brand-mark">
           <img className="top-nav__logo" src="/logo-removebg-preview.png" alt="SynMed Telehealth" />
@@ -317,10 +319,27 @@ function AppNav() {
         </div>
       </div>
 
+      <button
+        aria-expanded={landingMenuOpen}
+        aria-label={landingMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+        className="top-nav__menu-toggle"
+        type="button"
+        onClick={() => setLandingMenuOpen((current) => !current)}
+      >
+        <span aria-hidden="true" />
+        <span aria-hidden="true" />
+        <span aria-hidden="true" />
+      </button>
+
       <div className="top-nav__links">
         {navItems.map((item) => (
           item.href ? (
-            <a key={item.href} className="top-nav__link" href={item.href}>
+            <a
+              key={item.href}
+              className="top-nav__link"
+              href={item.href}
+              onClick={() => setLandingMenuOpen(false)}
+            >
               {item.label}
             </a>
           ) : (
@@ -330,6 +349,7 @@ function AppNav() {
                 isActive ? "top-nav__link top-nav__link--active" : "top-nav__link"
               }
               to={item.to}
+              onClick={() => setLandingMenuOpen(false)}
             >
               {item.label}
             </NavLink>
@@ -349,14 +369,18 @@ function AppNav() {
             Policies
           </button>
           <div className="top-nav__policy-links">
-            <Link to="/terms">Terms of Use</Link>
-            <Link to="/privacy">Privacy Policy</Link>
+            <Link to="/terms" onClick={() => setLandingMenuOpen(false)}>Terms of Use</Link>
+            <Link to="/privacy" onClick={() => setLandingMenuOpen(false)}>Privacy Policy</Link>
           </div>
         </div>
       </div>
 
       <div className="top-nav__actions">
-        <NavLink className="button button--primary top-nav__action top-nav__signin" to="/signin">
+        <NavLink
+          className="button button--primary top-nav__action top-nav__signin"
+          to="/signin"
+          onClick={() => setLandingMenuOpen(false)}
+        >
           Sign In
         </NavLink>
         {sessionUser?.role === "doctor" ? (
