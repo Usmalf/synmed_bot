@@ -129,3 +129,50 @@ cp synmed_backup_YYYYMMDD_HHMMSS.db /var/data/synmed.db
 ```
 
 Use database-only restore only when stored files are already intact or not needed.
+
+## SQLite to PostgreSQL Migration
+
+The app can run on SQLite by default or PostgreSQL when `DATABASE_URL` is set.
+Do not set `DATABASE_URL` on production until the data import has been tested.
+
+Before migrating:
+
+1. Download a full backup from **Admin > Settings > Backups**.
+2. Create a Render PostgreSQL database.
+3. Copy the external PostgreSQL connection string.
+4. Keep the backend on SQLite until the import has been tested.
+
+Dry-run the local SQLite file:
+
+```powershell
+python scripts/migrate_sqlite_to_postgres.py `
+  --sqlite-path .\synmed.db `
+  --database-url "postgresql://USER:PASSWORD@HOST:PORT/DATABASE" `
+  --dry-run
+```
+
+Import into an empty PostgreSQL database:
+
+```powershell
+python scripts/migrate_sqlite_to_postgres.py `
+  --sqlite-path .\synmed.db `
+  --database-url "postgresql://USER:PASSWORD@HOST:PORT/DATABASE"
+```
+
+If the target database already has test data and should be cleared first:
+
+```powershell
+python scripts/migrate_sqlite_to_postgres.py `
+  --sqlite-path .\synmed.db `
+  --database-url "postgresql://USER:PASSWORD@HOST:PORT/DATABASE" `
+  --replace
+```
+
+After import:
+
+1. Set `DATABASE_URL` on the backend service.
+2. Redeploy the backend.
+3. Confirm admin login, patient login, doctor login, payments, documents, support tickets, and consultations.
+4. Keep the old SQLite backup until PostgreSQL has been verified in production.
+
+Current limitation: Admin database backup downloads are SQLite-only. When PostgreSQL is active, the backup buttons are disabled until PostgreSQL dump backups are configured.
