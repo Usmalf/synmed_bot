@@ -20,6 +20,7 @@ storage_service.ensure_directory("consultation_media")
 storage_service.ensure_directory("doctor_application_files")
 
 from .routes import admin, auth, consultations, customer_care, doctors, followups, health, patients, payments  # noqa: E402
+from .services.admin_reminder_service import send_due_backup_reminders  # noqa: E402
 from .services.doctor_app_service import send_due_license_expiry_reminders  # noqa: E402
 
 app.add_middleware(
@@ -90,12 +91,18 @@ app.mount(
 def on_startup():
     init_db()
     app.state.license_reminder_task = asyncio.create_task(_license_reminder_loop())
+    app.state.backup_reminder_task = asyncio.create_task(_backup_reminder_loop())
 
 
 @app.on_event("shutdown")
 async def on_shutdown():
-    task = getattr(app.state, "license_reminder_task", None)
-    if task:
+    tasks = [
+        getattr(app.state, "license_reminder_task", None),
+        getattr(app.state, "backup_reminder_task", None),
+    ]
+    for task in tasks:
+        if not task:
+            continue
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
@@ -104,4 +111,10 @@ async def on_shutdown():
 async def _license_reminder_loop():
     while True:
         await asyncio.to_thread(send_due_license_expiry_reminders)
+        await asyncio.sleep(60 * 60 * 24)
+
+
+async def _backup_reminder_loop():
+    while True:
+        await asyncio.to_thread(send_due_backup_reminders)
         await asyncio.sleep(60 * 60 * 24)

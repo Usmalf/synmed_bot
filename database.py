@@ -426,6 +426,14 @@ def init_db():
     """)
 
     cursor.execute("""
+    CREATE TABLE IF NOT EXISTS admin_email_reminders (
+        reminder_key TEXT PRIMARY KEY,
+        sent_at TEXT NOT NULL,
+        details TEXT
+    )
+    """)
+
+    cursor.execute("""
     CREATE TABLE IF NOT EXISTS customer_care_accounts (
         account_id INTEGER PRIMARY KEY AUTOINCREMENT,
         email TEXT NOT NULL UNIQUE,
