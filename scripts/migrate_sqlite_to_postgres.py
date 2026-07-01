@@ -118,6 +118,30 @@ def postgres_columns(cursor, table: str) -> list[str]:
     return [row["column_name"] for row in cursor.fetchall()]
 
 
+def postgres_table_exists(cursor, table: str) -> bool:
+    cursor.execute(
+        """
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = current_schema() AND table_name = %s
+        """,
+        (table,),
+    )
+    return cursor.fetchone() is not None
+
+
+def ensure_optional_tables(cursor) -> None:
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS app_settings (
+            setting_key TEXT PRIMARY KEY,
+            setting_value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+
+
 def table_counts(sqlite_conn: sqlite3.Connection) -> dict[str, int]:
     cursor = sqlite_conn.cursor()
     counts = {}
@@ -132,15 +156,7 @@ def table_counts(sqlite_conn: sqlite3.Connection) -> dict[str, int]:
 
 def target_has_data(pg_cursor) -> bool:
     for table in TABLES:
-        pg_cursor.execute(
-            """
-            SELECT 1
-            FROM information_schema.tables
-            WHERE table_schema = current_schema() AND table_name = %s
-            """,
-            (table,),
-        )
-        if not pg_cursor.fetchone():
+        if not postgres_table_exists(pg_cursor, table):
             continue
         pg_cursor.execute(f'SELECT 1 FROM "{table}" LIMIT 1')
         if pg_cursor.fetchone():
@@ -149,7 +165,10 @@ def target_has_data(pg_cursor) -> bool:
 
 
 def clear_target(pg_cursor) -> None:
-    table_list = ", ".join(f'"{table}"' for table in TABLES)
+    existing_tables = [table for table in TABLES if postgres_table_exists(pg_cursor, table)]
+    if not existing_tables:
+        return
+    table_list = ", ".join(f'"{table}"' for table in existing_tables)
     pg_cursor.execute(f"TRUNCATE TABLE {table_list} RESTART IDENTITY CASCADE")
 
 
@@ -231,6 +250,7 @@ def main() -> int:
 
     with psycopg.connect(args.database_url, row_factory=dict_row) as pg_conn:
         with pg_conn.cursor() as pg_cursor:
+            ensure_optional_tables(pg_cursor)
             if target_has_data(pg_cursor):
                 if not args.replace:
                     print(
