@@ -215,7 +215,7 @@ export default function LandingPage() {
             <Link className="button button--primary" to="/signin">
               Patient Login
             </Link>
-            <Link className="button landing-hero__cta-alt" to="/signin">
+            <Link className="button landing-hero__cta-alt" to="/patient/register">
               Get Started
             </Link>
           </div>
