@@ -170,9 +170,17 @@ python scripts/migrate_sqlite_to_postgres.py `
 
 After import:
 
-1. Set `DATABASE_URL` on the backend service.
-2. Redeploy the backend.
-3. Confirm admin login, patient login, doctor login, payments, documents, support tickets, and consultations.
-4. Keep the old SQLite backup until PostgreSQL has been verified in production.
+1. Verify PostgreSQL row counts against SQLite:
+
+```powershell
+python scripts/verify_postgres_migration.py `
+  --sqlite-path .\synmed.db `
+  --database-url "postgresql://USER:PASSWORD@HOST:PORT/DATABASE"
+```
+
+2. Set `DATABASE_URL` on the backend service.
+3. Redeploy the backend.
+4. Confirm admin login, patient login, doctor login, payments, documents, support tickets, and consultations.
+5. Keep the old SQLite backup until PostgreSQL has been verified in production.
 
 Current limitation: Admin database backup downloads are SQLite-only. When PostgreSQL is active, the backup buttons are disabled until PostgreSQL dump backups are configured.
