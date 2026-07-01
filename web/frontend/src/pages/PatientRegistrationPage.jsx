@@ -22,6 +22,7 @@ export default function PatientRegistrationPage() {
     email: "",
     password: "",
   });
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [registrationState, setRegistrationState] = useState({
     status: flow.registrationPatient ? "success" : "idle",
     message: "",
@@ -110,6 +111,14 @@ export default function PatientRegistrationPage() {
 
   async function handleRegistrationSubmit(event) {
     event.preventDefault();
+    if (!termsAccepted) {
+      setPaymentState({
+        status: "error",
+        message: "Please agree to the Terms and Conditions before registration.",
+        payment: null,
+      });
+      return;
+    }
     setPaymentState({
       status: "loading",
       message: "Initializing registration payment...",
@@ -199,7 +208,19 @@ export default function PatientRegistrationPage() {
                   <span className="form-field__label">Prior Medical Conditions</span>
                   <input className="form-field__input" type="text" placeholder="Hypertension, diabetes, sickle cell, asthma..." value={registrationForm.medical_conditions} onChange={(event) => updateRegistrationField("medical_conditions", event.target.value)} />
                 </label>
-                <button className="button button--primary login-page__button" type="submit">
+                <label className="login-page__checkbox">
+                  <input
+                    className="login-page__checkbox-input"
+                    type="checkbox"
+                    checked={termsAccepted}
+                    onChange={(event) => setTermsAccepted(event.target.checked)}
+                    required
+                  />
+                  <span>
+                    I agree to the <Link to="/terms" target="_blank" rel="noreferrer">Terms and Conditions</Link>.
+                  </span>
+                </label>
+                <button className="button button--primary login-page__button" type="submit" disabled={!termsAccepted}>
                   Register
                 </button>
               </form>

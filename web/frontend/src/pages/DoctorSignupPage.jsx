@@ -28,6 +28,7 @@ export default function DoctorSignupPage() {
     licenseFile: null,
     password: "",
   });
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [status, setStatus] = useState({
     kind: "idle",
     message: "Create a doctor web application. We will verify your email before sending it to admin review.",
@@ -36,6 +37,14 @@ export default function DoctorSignupPage() {
 
   async function handleSubmit(event) {
     event.preventDefault();
+    if (!termsAccepted) {
+      setStatus({
+        kind: "error",
+        message: "Please agree to the Terms and Conditions before submitting your application.",
+        debugCode: "",
+      });
+      return;
+    }
     setStatus({
       kind: "loading",
       message: "Sending doctor application OTP by email...",
@@ -191,7 +200,19 @@ export default function DoctorSignupPage() {
                 required
               />
             </label>
-            <button className="button button--primary login-page__button" type="submit">
+            <label className="login-page__checkbox">
+              <input
+                className="login-page__checkbox-input"
+                type="checkbox"
+                checked={termsAccepted}
+                onChange={(event) => setTermsAccepted(event.target.checked)}
+                required
+              />
+              <span>
+                I agree to the <Link to="/terms" target="_blank" rel="noreferrer">Terms and Conditions</Link>.
+              </span>
+            </label>
+            <button className="button button--primary login-page__button" type="submit" disabled={!termsAccepted}>
               Submit Application
             </button>
           </form>
