@@ -74,6 +74,11 @@ class PostgresCursor:
         converted = converted.replace("AUTOINCREMENT", "")
         converted = converted.replace("TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP", "TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP::TEXT)")
         converted = converted.replace("TEXT DEFAULT CURRENT_TIMESTAMP", "TEXT DEFAULT (CURRENT_TIMESTAMP::TEXT)")
+        converted = re.sub(r"\s+COLLATE\s+NOCASE\b", "", converted, flags=re.IGNORECASE)
+        converted = converted.replace("datetime('now', '-24 hours')", "(NOW() - INTERVAL '24 hours')::TEXT")
+        converted = converted.replace('datetime("now", "-24 hours")', "(NOW() - INTERVAL '24 hours')::TEXT")
+        converted = re.sub(r"datetime\((COALESCE\([^)]+\))\)", r"\1", converted, flags=re.IGNORECASE)
+        converted = re.sub(r"datetime\(([a-zA-Z_][a-zA-Z0-9_\.]*)\)", r"\1", converted, flags=re.IGNORECASE)
         for column in BIGINT_COLUMNS:
             converted = re.sub(
                 rf"\b{column}\s+INTEGER\b",
