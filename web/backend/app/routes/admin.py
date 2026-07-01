@@ -38,6 +38,7 @@ from ..services.admin_app_service import (
     update_admin_payment_settings,
 )
 from ..services.admin_reminder_service import list_admin_email_reminders, send_admin_reminder_test
+from ..services.deployment_readiness_service import get_deployment_readiness
 from ..services.medical_report_app_service import assign_medical_report_request, list_admin_medical_report_requests
 from ..services.partner_app_service import create_partner_facility, list_partner_facilities, update_partner_status
 from ..services.payment_app_service import verify_web_payment
@@ -405,6 +406,11 @@ def admin_ratings(session: dict = Depends(require_admin)):
 @router.get("/delivery-settings")
 def admin_delivery_settings(session: dict = Depends(require_admin)):
     return get_admin_delivery_settings()
+
+
+@router.get("/deployment-readiness")
+def admin_deployment_readiness(session: dict = Depends(require_admin)):
+    return get_deployment_readiness()
 
 
 @router.get("/backups/status")

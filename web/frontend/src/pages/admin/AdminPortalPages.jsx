@@ -15,6 +15,7 @@ import {
   fetchAdminAuditLogs,
   fetchAdminBackupStatus,
   fetchAdminConsultation,
+  fetchAdminDeploymentReadiness,
   fetchAdminConsultations,
   fetchAdminDeliverySettings,
   fetchAdminErrorLogs,
@@ -1679,13 +1680,15 @@ export function AdminSettingsPage() {
   async function load() {
     setState((current) => ({ ...current, status: "loading", message: "Checking delivery settings..." }));
     try {
-      const [settings, backupStatus, reminderStatus] = await Promise.all([
+      const [settings, backupStatus, reminderStatus, deploymentStatus] = await Promise.all([
         fetchAdminDeliverySettings(),
         fetchAdminBackupStatus(),
         fetchAdminEmailReminders(),
+        fetchAdminDeploymentReadiness(),
       ]);
       settings.backups = backupStatus;
       settings.reminders = reminderStatus.reminders || [];
+      settings.deployment = deploymentStatus;
       setState({ status: "success", message: "", settings });
       if (settings.payments) {
         setPaymentForm({
@@ -1824,6 +1827,7 @@ export function AdminSettingsPage() {
     { id: "payments", label: "Payment values" },
     { id: "readiness", label: "System readiness" },
     { id: "backups", label: "Backups" },
+    { id: "deployment", label: "Deployment" },
     { id: "reminders", label: "Reminders" },
     { id: "email", label: "Email branding" },
     { id: "test", label: "Delivery test" },
@@ -1913,6 +1917,57 @@ export function AdminSettingsPage() {
             <button className="button button--primary" type="button" disabled={busy || state.settings?.backups?.database_backup_supported === false} onClick={() => downloadBackup("full")}>
               {busy ? "Preparing..." : "Download full backup"}
             </button>
+          </div>
+        </DataPanel>
+        ) : null}
+        {activeSettingsPanel === "deployment" ? (
+        <DataPanel title="Deployment readiness">
+          <div className="admin-delivery-list">
+            <article>
+              <div>
+                <strong>Backend environment</strong>
+                <p>{state.settings?.deployment?.database_provider === "postgresql" ? "PostgreSQL is active." : "SQLite fallback is active."}</p>
+                {state.settings?.deployment?.frontend_host ? <p>Frontend host: {state.settings.deployment.frontend_host}</p> : null}
+              </div>
+              <StatusPill
+                label={state.settings?.deployment?.ready ? "Ready" : "Review"}
+                tone={state.settings?.deployment?.ready ? "success" : "warning"}
+              />
+            </article>
+            {(state.settings?.deployment?.required || []).map((item) => (
+              <article key={item.key}>
+                <div>
+                  <strong>{item.key}</strong>
+                  <p>{item.required ? "Required for production." : "Recommended for production."}</p>
+                </div>
+                <StatusPill label={item.set ? "Set" : "Missing"} tone={item.set ? "success" : "danger"} />
+              </article>
+            ))}
+            {(state.settings?.deployment?.recommended || []).map((item) => (
+              <article key={item.key}>
+                <div>
+                  <strong>{item.key}</strong>
+                  <p>Recommended for complete operations.</p>
+                </div>
+                <StatusPill label={item.set ? "Set" : "Optional"} tone={item.set ? "success" : "warning"} />
+              </article>
+            ))}
+          </div>
+          {state.settings?.deployment?.warnings?.length ? (
+            <div className="admin-warning-list">
+              {state.settings.deployment.warnings.map((warning) => (
+                <p key={warning}>{warning}</p>
+              ))}
+            </div>
+          ) : null}
+          <div className="admin-delivery-list admin-deployment-frontend">
+            <article>
+              <div>
+                <strong>Frontend build API URL</strong>
+                <p>{API_BASE_URL}</p>
+              </div>
+              <StatusPill label={API_BASE_URL ? "Set" : "Missing"} tone={API_BASE_URL ? "success" : "danger"} />
+            </article>
           </div>
         </DataPanel>
         ) : null}

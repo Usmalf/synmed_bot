@@ -674,6 +674,26 @@
   margin-top: 0.9rem;
 }
 
+.admin-warning-list {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.9rem;
+}
+
+.admin-warning-list p {
+  background: rgba(216, 169, 76, 0.12);
+  border: 1px solid rgba(216, 169, 76, 0.25);
+  border-radius: 6px;
+  color: #f2d895;
+  font-size: 0.82rem;
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+}
+
+.admin-deployment-frontend {
+  margin-top: 0.9rem;
+}
+
 .admin-rating-summary-button {
   background: transparent;
   border: 0;
@@ -1095,6 +1115,12 @@ body[data-background-theme="light"] .admin-stats article {
 body[data-background-theme="light"] .admin-stats strong,
 body[data-background-theme="light"] .admin-error-message strong {
   color: #163741;
+}
+
+body[data-background-theme="light"] .admin-warning-list p {
+  background: rgba(214, 169, 76, 0.12);
+  border-color: rgba(142, 102, 28, 0.24);
+  color: #6d4d10;
 }
 
 body[data-background-theme="light"] .admin-sidebar,

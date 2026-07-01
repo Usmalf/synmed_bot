@@ -319,6 +319,19 @@ export async function fetchAdminBackupStatus() {
   return body;
 }
 
+export async function fetchAdminDeploymentReadiness() {
+  const response = await fetch(`${API_BASE_URL}/admin/deployment-readiness`, {
+    headers: {
+      ...authHeaders(),
+    },
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body?.detail || `Request failed: ${response.status}`);
+  }
+  return body;
+}
+
 function filenameFromDisposition(disposition, fallback) {
   const match = /filename="?([^"]+)"?/i.exec(disposition || "");
   return match?.[1] || fallback;
