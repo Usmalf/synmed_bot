@@ -12,6 +12,15 @@ from .auth_service import send_plain_email
 UTC = timezone.utc
 BACKUP_STALE_AFTER = timedelta(hours=72)
 REMINDER_REPEAT_AFTER = timedelta(hours=24)
+EMAIL_ALERT_IDS = {
+    "backend-errors",
+    "open-support-tickets",
+    "pending-customer-care-agents",
+    "pending-payments",
+    "missing-payments",
+    "storage-missing",
+    "delivery-setup",
+}
 
 
 def _now() -> datetime:
@@ -78,6 +87,57 @@ def _settings_destination() -> str:
     return "Admin dashboard > Settings > Backups"
 
 
+def _frontend_destination(href: str) -> str:
+    frontend_base = os.getenv("FRONTEND_BASE_URL", "").strip().rstrip("/")
+    if frontend_base and href:
+        return f"{frontend_base}{href if href.startswith('/') else f'/{href}'}"
+    return href or "Admin dashboard"
+
+
+def _send_admin_reminder(reminder: dict, now: datetime) -> dict:
+    last_sent = _last_sent_at(reminder["key"])
+    if last_sent and now - last_sent < REMINDER_REPEAT_AFTER:
+        return {"sent": 0, "reason": "recently_sent", "reminder_key": reminder["key"]}
+
+    recipients = _admin_recipients()
+    if not recipients:
+        return {"sent": 0, "reason": "no_admin_email", "reminder_key": reminder["key"]}
+
+    sent_count = 0
+    failed = []
+    for admin in recipients:
+        ok = send_plain_email(admin["email"], reminder["subject"], reminder["body"])
+        if ok:
+            sent_count += 1
+        else:
+            failed.append(admin["email"])
+
+    if sent_count:
+        _mark_sent(
+            reminder["key"],
+            {
+                **reminder.get("details", {}),
+                "sent_count": sent_count,
+                "failed": failed,
+            },
+            now,
+        )
+
+    if failed:
+        log_operational_error(
+            "admin_email_reminder",
+            "warning",
+            "Admin reminder email failed for one or more admins.",
+            details={"failed_recipients": failed, "reminder_key": reminder["key"]},
+        )
+
+    return {
+        "sent": sent_count,
+        "failed": failed,
+        "reminder_key": reminder["key"],
+    }
+
+
 def _backup_reminder(now: datetime) -> dict | None:
     status = get_backup_status()
     latest = status.get("latest_backup")
@@ -141,44 +201,39 @@ def send_due_backup_reminders() -> dict:
     if not reminder:
         return {"sent": 0, "reason": "backup_current"}
 
-    last_sent = _last_sent_at(reminder["key"])
-    if last_sent and now - last_sent < REMINDER_REPEAT_AFTER:
-        return {"sent": 0, "reason": "recently_sent", "reminder_key": reminder["key"]}
+    return _send_admin_reminder(reminder, now)
 
-    recipients = _admin_recipients()
-    if not recipients:
-        return {"sent": 0, "reason": "no_admin_email", "reminder_key": reminder["key"]}
 
-    sent_count = 0
-    failed = []
-    for admin in recipients:
-        ok = send_plain_email(admin["email"], reminder["subject"], reminder["body"])
-        if ok:
-            sent_count += 1
-        else:
-            failed.append(admin["email"])
+def send_due_operational_reminders() -> dict:
+    from .admin_app_service import get_admin_alerts
 
-    if sent_count:
-        _mark_sent(
-            reminder["key"],
-            {
-                **reminder["details"],
-                "sent_count": sent_count,
-                "failed": failed,
+    now = _now()
+    alerts = [
+        alert
+        for alert in get_admin_alerts().get("alerts", [])
+        if alert.get("id") in EMAIL_ALERT_IDS
+    ]
+    results = []
+    for alert in alerts:
+        destination = _frontend_destination(alert.get("href", ""))
+        reminder = {
+            "key": f"admin-alert-{alert['id']}",
+            "subject": f"SynMed admin reminder: {alert['title']}",
+            "body": (
+                f"{alert['title']}\n\n"
+                f"{alert['message']}\n\n"
+                f"Open this area to review it: {destination}"
+            ),
+            "details": {
+                "alert_id": alert["id"],
+                "tone": alert.get("tone"),
+                "href": alert.get("href"),
             },
-            now,
-        )
-
-    if failed:
-        log_operational_error(
-            "admin_backup_reminder",
-            "warning",
-            "Backup reminder email failed for one or more admins.",
-            details={"failed_recipients": failed, "reminder_key": reminder["key"]},
-        )
+        }
+        results.append(_send_admin_reminder(reminder, now))
 
     return {
-        "sent": sent_count,
-        "failed": failed,
-        "reminder_key": reminder["key"],
+        "checked": len(alerts),
+        "sent": sum(result.get("sent", 0) for result in results),
+        "results": results,
     }

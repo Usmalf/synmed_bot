@@ -20,7 +20,7 @@ storage_service.ensure_directory("consultation_media")
 storage_service.ensure_directory("doctor_application_files")
 
 from .routes import admin, auth, consultations, customer_care, doctors, followups, health, patients, payments  # noqa: E402
-from .services.admin_reminder_service import send_due_backup_reminders  # noqa: E402
+from .services.admin_reminder_service import send_due_backup_reminders, send_due_operational_reminders  # noqa: E402
 from .services.doctor_app_service import send_due_license_expiry_reminders  # noqa: E402
 
 app.add_middleware(
@@ -117,4 +117,5 @@ async def _license_reminder_loop():
 async def _backup_reminder_loop():
     while True:
         await asyncio.to_thread(send_due_backup_reminders)
+        await asyncio.to_thread(send_due_operational_reminders)
         await asyncio.sleep(60 * 60 * 24)
