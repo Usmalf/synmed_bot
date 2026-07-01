@@ -4,7 +4,7 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from database import get_database_path
+from database import get_database_path, is_postgres_enabled
 from services import storage_service
 
 
@@ -41,6 +41,9 @@ def _is_relative_to(path: Path, parent: Path) -> bool:
 
 
 def create_database_backup() -> dict:
+    if is_postgres_enabled():
+        raise RuntimeError("PostgreSQL database backup export is not configured yet.")
+
     source = Path(get_database_path())
     if not source.exists():
         raise FileNotFoundError(f"Database file not found: {source}")
@@ -58,6 +61,9 @@ def create_database_backup() -> dict:
 
 
 def create_full_backup_archive() -> dict:
+    if is_postgres_enabled():
+        raise RuntimeError("PostgreSQL full backup export is not configured yet.")
+
     backup_dir = _backup_root()
     timestamp = _timestamp()
     archive = backup_dir / f"synmed_full_backup_{timestamp}.zip"
@@ -109,10 +115,13 @@ def get_backup_status() -> dict:
         reverse=True,
     )
     latest = backups[0] if backups else None
+    database_provider = "postgresql" if is_postgres_enabled() else "sqlite"
     return {
+        "database_provider": database_provider,
         "database_path": str(database_path),
-        "database_exists": database_path.exists(),
-        "database_size": database_path.stat().st_size if database_path.exists() else 0,
+        "database_exists": True if is_postgres_enabled() else database_path.exists(),
+        "database_size": 0 if is_postgres_enabled() else database_path.stat().st_size if database_path.exists() else 0,
+        "database_backup_supported": not is_postgres_enabled(),
         "storage_root": str(storage_root),
         "storage_exists": storage_root.exists(),
         "storage_file_count": storage_file_count,

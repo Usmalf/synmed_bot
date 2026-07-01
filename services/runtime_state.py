@@ -1,5 +1,4 @@
 import json
-import sqlite3
 from uuid import uuid4
 
 from database import get_connection
@@ -102,7 +101,7 @@ def load_doctor_presence():
                 "SELECT doctor_id, status FROM doctor_runtime_presence"
             )
             return cursor.fetchall()
-        except sqlite3.OperationalError:
+        except Exception:
             return []
 
 
@@ -151,7 +150,7 @@ def load_waiting_patients():
                 """
             )
             rows = cursor.fetchall()
-        except sqlite3.OperationalError:
+        except Exception:
             rows = []
     return [
         {
@@ -206,7 +205,7 @@ def load_active_consultations():
                 """
             )
             rows = cursor.fetchall()
-        except sqlite3.OperationalError:
+        except Exception:
             rows = []
     return [
         {
@@ -251,7 +250,7 @@ def load_support_presence():
                 "SELECT agent_id, status FROM support_runtime_presence"
             )
             return cursor.fetchall()
-        except sqlite3.OperationalError:
+        except Exception:
             return []
 
 
@@ -291,7 +290,7 @@ def load_support_queue():
                 """
             )
             return cursor.fetchall()
-        except sqlite3.OperationalError:
+        except Exception:
             return []
 
 
@@ -330,5 +329,5 @@ def load_support_chats():
                 "SELECT session_id, user_id, agent_id FROM support_active_chats_runtime"
             )
             return cursor.fetchall()
-        except sqlite3.OperationalError:
+        except Exception:
             return []

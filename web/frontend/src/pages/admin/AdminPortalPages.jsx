@@ -1877,9 +1877,13 @@ export function AdminSettingsPage() {
             <article>
               <div>
                 <strong>Database</strong>
-                <p>{state.settings?.backups?.database_exists ? `${formatBytes(state.settings.backups.database_size)} at ${state.settings.backups.database_path}` : "Database file not found."}</p>
+                <p>
+                  {state.settings?.backups?.database_provider === "postgresql"
+                    ? "PostgreSQL connection is active. Database file download is disabled until PostgreSQL dump backups are configured."
+                    : state.settings?.backups?.database_exists ? `${formatBytes(state.settings.backups.database_size)} at ${state.settings.backups.database_path}` : "Database file not found."}
+                </p>
               </div>
-              <StatusPill label={state.settings?.backups?.database_exists ? "Ready" : "Missing"} tone={state.settings?.backups?.database_exists ? "success" : "warning"} />
+              <StatusPill label={state.settings?.backups?.database_provider === "postgresql" ? "PostgreSQL" : state.settings?.backups?.database_exists ? "Ready" : "Missing"} tone={state.settings?.backups?.database_exists ? "success" : "warning"} />
             </article>
             <article>
               <div>
@@ -1897,10 +1901,10 @@ export function AdminSettingsPage() {
             </article>
           </div>
           <div className="admin-settings-actions">
-            <button className="button button--secondary" type="button" disabled={busy} onClick={() => downloadBackup("database")}>
+            <button className="button button--secondary" type="button" disabled={busy || state.settings?.backups?.database_backup_supported === false} onClick={() => downloadBackup("database")}>
               {busy ? "Preparing..." : "Download database"}
             </button>
-            <button className="button button--primary" type="button" disabled={busy} onClick={() => downloadBackup("full")}>
+            <button className="button button--primary" type="button" disabled={busy || state.settings?.backups?.database_backup_supported === false} onClick={() => downloadBackup("full")}>
               {busy ? "Preparing..." : "Download full backup"}
             </button>
           </div>
