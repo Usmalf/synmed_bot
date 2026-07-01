@@ -907,28 +907,64 @@ def login_or_signup_patient_with_google(credential: str) -> dict:
 
 
 def request_patient_recovery(identifier: str, email: str, new_password: str) -> dict:
-    patient = get_patient_by_identifier(identifier)
-    if not patient:
-        raise HTTPException(status_code=404, detail="Patient record was not found.")
     normalized_email = email.strip().lower()
     if not normalized_email:
         raise HTTPException(status_code=400, detail="Email is required.")
+    if len(new_password.strip()) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters long.")
+
+    patient = get_patient_by_identifier(normalized_email)
+    account_type = ""
+    account_id = ""
+    current_email = normalized_email
+    password_hash = _password_hash(new_password)
+
+    if patient:
+        account_type = "patient"
+        account_id = patient["hospital_number"]
+        current_email = normalized_email
+        password_hash = hash_patient_password(new_password)
+    else:
+        try:
+            doctor_id, profile = _resolve_doctor_account(normalized_email)
+        except HTTPException:
+            doctor_id = None
+            profile = None
+        if doctor_id and profile:
+            account_type = "doctor"
+            account_id = str(doctor_id)
+            current_email = (profile.get("email") or normalized_email).strip().lower()
+
+    if not account_type:
+        customer_care_account = get_customer_care_account_by_identifier(normalized_email)
+        if customer_care_account and customer_care_account.get("status") == "active":
+            account_type = "customer_care"
+            account_id = str(customer_care_account["account_id"])
+            current_email = (customer_care_account.get("email") or normalized_email).strip().lower()
+
+    if not account_type:
+        if get_admin_account_by_identifier(normalized_email):
+            raise HTTPException(status_code=403, detail="Admin password recovery is handled by admin bootstrap.")
+        raise HTTPException(status_code=404, detail="No SynMed account was found for this email.")
+
     code = _issue_otp_code()
     context_json = json.dumps(
         {
-            "email": normalized_email,
-            "password_hash": hash_patient_password(new_password),
+            "account_type": account_type,
+            "account_id": account_id,
+            "email": current_email,
+            "password_hash": password_hash,
         }
     )
     _store_otp(
         role="patient_recovery",
-        identifier=patient["hospital_number"],
-        delivery_target=normalized_email,
+        identifier=normalized_email,
+        delivery_target=current_email,
         code=code,
         context_json=context_json,
     )
 
-    delivered = _deliver_otp_checked("email", normalized_email, code)
+    delivered = _deliver_otp_checked("email", current_email, code)
 
     return {
         "success": True,
@@ -938,37 +974,59 @@ def request_patient_recovery(identifier: str, email: str, new_password: str) -> 
             else "Recovery OTP generated, but email delivery is not configured correctly yet."
         ),
         "expires_in_seconds": OTP_TTL_SECONDS,
-        "delivery_target": normalized_email,
+        "delivery_target": current_email,
         "debug_code": code if _is_debug_otp_visible() else None,
     }
 
 
 def verify_patient_recovery(identifier: str, otp_code: str) -> dict:
-    patient = get_patient_by_identifier(identifier)
-    if not patient:
-        raise HTTPException(status_code=404, detail="Patient record was not found.")
+    normalized_identifier = identifier.strip().lower()
     row = _consume_valid_otp(
         role="patient_recovery",
-        identifier=patient["hospital_number"],
+        identifier=normalized_identifier,
         otp_code=otp_code,
     )
     context = json.loads(row["context_json"] or "{}")
+    account_type = context.get("account_type") or "patient"
+    account_id = context.get("account_id") or normalized_identifier
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute(
-            """
-            UPDATE patients
-            SET email = ?, password_hash = ?, email_verified_at = ?, updated_at = ?
-            WHERE patient_id = ?
-            """,
-            (
-                context.get("email") or patient.get("email") or "",
-                context.get("password_hash") or patient.get("password_hash") or "",
-                _now_iso(),
-                _now_iso(),
-                patient["hospital_number"],
-            ),
-        )
+        if account_type == "patient":
+            cursor.execute(
+                """
+                UPDATE patients
+                SET email = ?, password_hash = ?, email_verified_at = ?, updated_at = ?
+                WHERE patient_id = ? OR LOWER(email) = ?
+                """,
+                (
+                    context.get("email") or normalized_identifier,
+                    context.get("password_hash") or "",
+                    _now_iso(),
+                    _now_iso(),
+                    account_id,
+                    normalized_identifier,
+                ),
+            )
+        elif account_type == "doctor":
+            cursor.execute(
+                """
+                UPDATE doctor_profiles
+                SET password_hash = ?, updated_at = ?
+                WHERE telegram_id = ?
+                """,
+                (context.get("password_hash") or "", _now_iso(), int(account_id)),
+            )
+        elif account_type == "customer_care":
+            cursor.execute(
+                """
+                UPDATE customer_care_accounts
+                SET password_hash = ?, updated_at = ?
+                WHERE account_id = ?
+                """,
+                (context.get("password_hash") or "", _now_iso(), int(account_id)),
+            )
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported recovery account type.")
         conn.commit()
 
     return {

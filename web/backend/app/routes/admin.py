@@ -1,13 +1,7 @@
-import os
-import re
-import secrets
-import sqlite3
-
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from services.paystack import PaystackError
 from pydantic import BaseModel
 
-from database import get_connection
 from ..deps import require_admin
 from ..services.admin_app_service import (
     approve_doctor_application,
@@ -122,85 +116,6 @@ class AdminPaymentSettingsPayload(BaseModel):
     followup_label: str
     medical_report_fee: int
     medical_report_label: str
-
-
-class SeedImportPayload(BaseModel):
-    sql: str
-
-
-ALLOWED_SEED_TABLES = {
-    "admin_accounts",
-    "customer_care_accounts",
-    "doctors",
-    "doctor_profiles",
-    "health_tips",
-    "partner_facilities",
-}
-
-
-def _statement_without_comments(statement: str) -> str:
-    lines = []
-    for line in statement.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("--"):
-            continue
-        lines.append(line)
-    return "\n".join(lines).strip()
-
-
-def _validate_seed_sql(sql: str):
-    if not sql or not sql.strip():
-        raise HTTPException(status_code=400, detail="Seed SQL is required.")
-
-    statements = [
-        _statement_without_comments(statement)
-        for statement in sql.split(";")
-        if _statement_without_comments(statement)
-    ]
-    if not statements:
-        raise HTTPException(status_code=400, detail="Seed SQL has no executable statements.")
-
-    touched_tables = set()
-    for statement in statements:
-        normalized = re.sub(r"\s+", " ", statement).strip()
-        upper = normalized.upper()
-        if upper in {"BEGIN TRANSACTION", "BEGIN", "COMMIT"}:
-            continue
-        if upper in {"PRAGMA FOREIGN_KEYS = OFF", "PRAGMA FOREIGN_KEYS = ON"}:
-            continue
-
-        table_match = re.match(r'^(DELETE\s+FROM|INSERT\s+INTO)\s+"?([A-Za-z_][A-Za-z0-9_]*)"?\b', normalized, re.I)
-        if not table_match:
-            raise HTTPException(status_code=400, detail=f"Unsupported seed statement: {normalized[:80]}")
-        table_name = table_match.group(2)
-        if table_name not in ALLOWED_SEED_TABLES:
-            raise HTTPException(status_code=400, detail=f"Seed table is not allowed: {table_name}")
-        touched_tables.add(table_name)
-
-    return sorted(touched_tables)
-
-
-@router.post("/migration/import-seed")
-def import_seed_sql(payload: SeedImportPayload, x_seed_import_token: str | None = Header(default=None)):
-    expected_token = os.getenv("MIGRATION_IMPORT_TOKEN", "").strip()
-    if not expected_token:
-        raise HTTPException(status_code=404, detail="Seed import is disabled.")
-    if not x_seed_import_token or not secrets.compare_digest(x_seed_import_token, expected_token):
-        raise HTTPException(status_code=403, detail="Seed import token is invalid.")
-
-    touched_tables = _validate_seed_sql(payload.sql)
-    try:
-        with get_connection() as conn:
-            conn.executescript(payload.sql)
-            conn.commit()
-    except sqlite3.Error as exc:
-        raise HTTPException(status_code=400, detail=f"Seed import failed: {exc}") from exc
-
-    return {
-        "imported": True,
-        "message": "Selected SynMed seed data imported.",
-        "tables": touched_tables,
-    }
 
 
 class AdminEmailBrandingPayload(BaseModel):
