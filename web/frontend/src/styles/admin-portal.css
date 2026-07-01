@@ -1144,9 +1144,11 @@ body[data-background-theme="light"] .admin-dialog-backdrop {
     align-items: stretch;
     bottom: 0;
     display: flex;
+    height: 100dvh;
     left: 0;
     max-width: min(56vw, 240px);
     min-height: 100vh;
+    overflow: hidden;
     position: fixed;
     top: 0;
     transform: translateX(-105%);
@@ -1165,6 +1167,16 @@ body[data-background-theme="light"] .admin-dialog-backdrop {
   .admin-sidebar__link {
     justify-content: flex-start;
     text-align: left;
+  }
+
+  .admin-sidebar__nav {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .admin-sidebar__account {
+    flex: 0 0 auto;
   }
 
   .admin-sidebar--mobile-open {

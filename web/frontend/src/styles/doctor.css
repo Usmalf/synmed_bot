@@ -2252,7 +2252,7 @@ body[data-background-theme="light"] .doctor-sidebar__account button:hover {
 
   .doctor-sidebar {
     box-shadow: 18px 0 42px rgba(0, 0, 0, 0.3);
-    height: 100vh;
+    height: 100dvh;
     left: 0;
     max-width: min(56vw, 240px);
     position: fixed;

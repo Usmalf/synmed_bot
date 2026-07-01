@@ -1348,10 +1348,10 @@ body[data-background-theme="light"] .top-nav__message-notification {
     border-radius: 0 12px 12px 0;
     bottom: 0;
     box-shadow: 18px 0 42px rgba(0, 0, 0, 0.3);
-    height: 100vh;
+    height: 100dvh;
     left: 0;
     max-width: min(56vw, 240px);
-    overflow-y: auto;
+    overflow: hidden;
     padding: 0.74rem 0.55rem;
     position: fixed;
     top: 0;
@@ -1450,14 +1450,36 @@ body[data-background-theme="light"] .top-nav__message-notification {
 
   .top-nav--landing-open .top-nav__links {
     display: grid;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 0.1rem;
   }
 
   .top-nav__links .top-nav__link,
   .top-nav__links .top-nav__dropdown-trigger {
+    align-items: center;
+    border-left: 3px solid transparent;
+    border-radius: 6px;
+    display: flex;
     justify-content: flex-start;
     padding: 0.48rem 0.55rem;
     text-align: left;
     width: 100%;
+  }
+
+  .top-nav--landing-open .top-nav__link:hover,
+  .top-nav--landing-open .top-nav__link--active {
+    background: rgba(87, 183, 158, 0.13);
+    color: #ffffff;
+  }
+
+  .top-nav--landing-open .top-nav__link--active {
+    box-shadow: inset 3px 0 #58c6a5;
+  }
+
+  .top-nav--landing-open .top-nav__dropdown-trigger::after {
+    margin-left: auto;
   }
 
   .top-nav__policy-menu {
@@ -1465,6 +1487,9 @@ body[data-background-theme="light"] .top-nav__message-notification {
   }
 
   .top-nav__policy-links {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
     display: none;
     gap: 0.2rem;
     margin-top: 0.18rem;
@@ -1585,10 +1610,11 @@ body[data-background-theme="light"] .top-nav__message-notification {
     border-radius: 0;
     box-shadow: 18px 0 42px rgba(0, 0, 0, 0.3);
     display: flex;
-    height: 100vh;
+    height: 100dvh;
     justify-content: flex-start;
     left: 0;
     max-width: min(56vw, 240px);
+    overflow: hidden;
     padding: 1rem 0.85rem;
     position: fixed;
     top: 0;
