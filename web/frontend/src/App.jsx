@@ -89,6 +89,7 @@ function AppNav() {
   const [sessionUser, setSessionUser] = useState(null);
   const [patientMenuOpen, setPatientMenuOpen] = useState(false);
   const [landingMenuOpen, setLandingMenuOpen] = useState(false);
+  const [landingDropdownOpen, setLandingDropdownOpen] = useState("");
 
   useEffect(() => {
     let ignore = false;
@@ -118,6 +119,7 @@ function AppNav() {
   useEffect(() => {
     setPatientMenuOpen(false);
     setLandingMenuOpen(false);
+    setLandingDropdownOpen("");
   }, [location.pathname]);
 
   useEffect(() => {
@@ -146,6 +148,11 @@ function AppNav() {
     window.sessionStorage.setItem(LOGOUT_HOME_REDIRECT_KEY, "true");
     setSessionUser(null);
     navigate("/", { replace: true });
+  }
+
+  function closeLandingMenu() {
+    setLandingMenuOpen(false);
+    setLandingDropdownOpen("");
   }
 
   useEffect(() => {
@@ -310,6 +317,7 @@ function AppNav() {
   }
 
   return (
+    <>
     <nav className={landingMenuOpen ? "top-nav top-nav--landing-open" : "top-nav"} aria-label="Primary navigation">
       <div className="top-nav__brand">
         <div className="top-nav__brand-mark">
@@ -326,7 +334,13 @@ function AppNav() {
         aria-label={landingMenuOpen ? "Close navigation menu" : "Open navigation menu"}
         className="top-nav__menu-toggle"
         type="button"
-        onClick={() => setLandingMenuOpen((current) => !current)}
+        onClick={() => {
+          setLandingMenuOpen((current) => {
+            const nextOpen = !current;
+            if (!nextOpen) setLandingDropdownOpen("");
+            return nextOpen;
+          });
+        }}
       >
         <span aria-hidden="true" />
         <span aria-hidden="true" />
@@ -340,7 +354,7 @@ function AppNav() {
               key={item.href}
               className="top-nav__link"
               href={item.href}
-              onClick={() => setLandingMenuOpen(false)}
+              onClick={closeLandingMenu}
             >
               {item.label}
             </a>
@@ -351,14 +365,27 @@ function AppNav() {
                 isActive ? "top-nav__link top-nav__link--active" : "top-nav__link"
               }
               to={item.to}
-              onClick={() => setLandingMenuOpen(false)}
+              onClick={closeLandingMenu}
             >
               {item.label}
             </NavLink>
           )
         ))}
-        <div className="top-nav__policy-menu">
-          <button className="top-nav__link top-nav__dropdown-trigger" type="button">
+        <div
+          className={
+            landingDropdownOpen === "partners"
+              ? "top-nav__policy-menu top-nav__policy-menu--open"
+              : "top-nav__policy-menu"
+          }
+        >
+          <button
+            aria-expanded={landingDropdownOpen === "partners"}
+            className="top-nav__link top-nav__dropdown-trigger"
+            type="button"
+            onClick={() =>
+              setLandingDropdownOpen((current) => (current === "partners" ? "" : "partners"))
+            }
+          >
             Partners
           </button>
           <div className="top-nav__policy-links">
@@ -366,13 +393,26 @@ function AppNav() {
             <span className="top-nav__coming-soon-link">Laboratory <em>Coming soon</em></span>
           </div>
         </div>
-        <div className="top-nav__policy-menu">
-          <button className="top-nav__link top-nav__dropdown-trigger" type="button">
+        <div
+          className={
+            landingDropdownOpen === "policies"
+              ? "top-nav__policy-menu top-nav__policy-menu--open"
+              : "top-nav__policy-menu"
+          }
+        >
+          <button
+            aria-expanded={landingDropdownOpen === "policies"}
+            className="top-nav__link top-nav__dropdown-trigger"
+            type="button"
+            onClick={() =>
+              setLandingDropdownOpen((current) => (current === "policies" ? "" : "policies"))
+            }
+          >
             Policies
           </button>
           <div className="top-nav__policy-links">
-            <Link to="/terms" onClick={() => setLandingMenuOpen(false)}>Terms of Use</Link>
-            <Link to="/privacy" onClick={() => setLandingMenuOpen(false)}>Privacy Policy</Link>
+            <Link to="/terms" onClick={closeLandingMenu}>Terms of Use</Link>
+            <Link to="/privacy" onClick={closeLandingMenu}>Privacy Policy</Link>
           </div>
         </div>
       </div>
@@ -381,7 +421,7 @@ function AppNav() {
         <NavLink
           className="button button--primary top-nav__action top-nav__signin"
           to="/signin"
-          onClick={() => setLandingMenuOpen(false)}
+          onClick={closeLandingMenu}
         >
           Sign In
         </NavLink>
@@ -397,6 +437,15 @@ function AppNav() {
         ) : null}
       </div>
     </nav>
+    {landingMenuOpen ? (
+      <button
+        aria-label="Close navigation menu"
+        className="landing-nav-backdrop"
+        type="button"
+        onClick={closeLandingMenu}
+      />
+    ) : null}
+    </>
   );
 }
 

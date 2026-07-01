@@ -1141,17 +1141,30 @@ body[data-background-theme="light"] .admin-dialog-backdrop {
   }
 
   .admin-sidebar {
+    align-items: stretch;
     bottom: 0;
     display: flex;
     left: 0;
-    max-width: min(82vw, 290px);
+    max-width: min(56vw, 240px);
     min-height: 100vh;
     position: fixed;
     top: 0;
     transform: translateX(-105%);
     transition: transform 180ms ease;
-    width: 100%;
+    width: 56vw;
     z-index: 42;
+  }
+
+  .admin-sidebar__brand,
+  .admin-sidebar__nav,
+  .admin-sidebar__account {
+    align-items: stretch;
+    text-align: left;
+  }
+
+  .admin-sidebar__link {
+    justify-content: flex-start;
+    text-align: left;
   }
 
   .admin-sidebar--mobile-open {

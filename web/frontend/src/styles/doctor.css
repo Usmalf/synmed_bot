@@ -2254,13 +2254,25 @@ body[data-background-theme="light"] .doctor-sidebar__account button:hover {
     box-shadow: 18px 0 42px rgba(0, 0, 0, 0.3);
     height: 100vh;
     left: 0;
-    max-width: 290px;
+    max-width: min(56vw, 240px);
     position: fixed;
     top: 0;
     transform: translateX(-105%);
     transition: transform 180ms ease;
-    width: min(84vw, 290px);
+    width: 56vw;
     z-index: 80;
+  }
+
+  .doctor-sidebar__header,
+  .doctor-sidebar__nav,
+  .doctor-sidebar__account {
+    align-items: stretch;
+    text-align: left;
+  }
+
+  .doctor-sidebar__link {
+    justify-content: flex-start;
+    text-align: left;
   }
 
   .doctor-sidebar__close {
