@@ -77,6 +77,7 @@ const patientNavItems = [
 const INACTIVITY_LOGOUT_MS = 30 * 60 * 1000;
 const SESSION_IDLE_CHECK_MS = 30 * 1000;
 const SESSION_LAST_ACTIVITY_KEY = "synmed_session_last_activity_at";
+const LOGOUT_HOME_REDIRECT_KEY = "synmed_logout_redirect_home";
 const ACTIVITY_EVENTS = ["mousemove", "mousedown", "keydown", "scroll", "touchstart", "input"];
 
 function AppNav() {
@@ -142,8 +143,9 @@ function AppNav() {
     clearPendingPatientLoginIdentifier();
     clearPendingPatientRecoveryIdentifier();
     window.localStorage.removeItem(SESSION_LAST_ACTIVITY_KEY);
+    window.sessionStorage.setItem(LOGOUT_HOME_REDIRECT_KEY, "true");
     setSessionUser(null);
-    navigate("/");
+    navigate("/", { replace: true });
   }
 
   useEffect(() => {

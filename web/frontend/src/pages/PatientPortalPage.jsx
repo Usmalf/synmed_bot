@@ -15,6 +15,7 @@ const publicPatientPaths = new Set([
   "/patient/recover/verify",
   "/patient/verify-email",
 ]);
+const LOGOUT_HOME_REDIRECT_KEY = "synmed_logout_redirect_home";
 
 export default function PatientPortalPage() {
   const navigate = useNavigate();
@@ -50,7 +51,12 @@ export default function PatientPortalPage() {
             patient: null,
           });
           if (!publicPatientPaths.has(location.pathname)) {
-            navigate("/signin", { replace: true });
+            if (window.sessionStorage.getItem(LOGOUT_HOME_REDIRECT_KEY) === "true") {
+              window.sessionStorage.removeItem(LOGOUT_HOME_REDIRECT_KEY);
+              navigate("/", { replace: true });
+            } else {
+              navigate("/signin", { replace: true });
+            }
           }
         }
       }

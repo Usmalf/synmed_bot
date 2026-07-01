@@ -908,7 +908,7 @@ export default function DoctorDashboardPage() {
       message: "History notes will autosave while you type.",
       savedAt: "",
     });
-    navigate("/signin");
+    navigate("/", { replace: true });
   }
 
   function handleDiagnosisChange(value) {
