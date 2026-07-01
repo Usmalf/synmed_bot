@@ -572,6 +572,33 @@
   padding: 1.1rem;
 }
 
+.admin-stats {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 1rem;
+}
+
+.admin-stats article {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.85rem;
+}
+
+.admin-stats span {
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.admin-stats strong {
+  color: var(--color-ink);
+  font-size: 1rem;
+}
+
 .admin-alert-list,
 .admin-activity-list,
 .admin-content-list,

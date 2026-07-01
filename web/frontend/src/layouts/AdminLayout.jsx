@@ -17,6 +17,7 @@ const adminLinks = [
   { to: "/admin/settings", label: "Settings" },
   { to: "/admin/ticket-log", label: "Ticket Log" },
   { to: "/customer-care", label: "Customer Care" },
+  { to: "/admin/errors", label: "Errors" },
   { to: "/admin/activity", label: "Activity" },
 ];
 

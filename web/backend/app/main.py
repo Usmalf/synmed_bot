@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from . import config  # noqa: F401
 from database import init_db
 from services import storage_service
+from services.operational_errors import log_exception
 
 
 app = FastAPI(title="SynMed Web API", version="0.1.0")
@@ -39,6 +40,25 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def log_unhandled_errors(request, call_next):
+    try:
+        return await call_next(request)
+    except Exception as exc:
+        session = getattr(request.state, "session", {}) or {}
+        with contextlib.suppress(Exception):
+            log_exception(
+                exc,
+                source="web_api",
+                path=str(request.url.path),
+                method=request.method,
+                status_code=500,
+                user_role=session.get("role", ""),
+                user_id=session.get("user_id", ""),
+            )
+        raise
 
 app.include_router(health.router)
 app.include_router(auth.router, prefix="/auth", tags=["auth"])

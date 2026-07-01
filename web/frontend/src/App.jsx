@@ -19,6 +19,7 @@ import {
   AdminConsultationsPage,
   AdminContentPage,
   AdminDoctorsPage,
+  AdminErrorsPage,
   AdminInboxPage,
   AdminOverviewPage,
   AdminPaymentsPage,
@@ -501,6 +502,7 @@ export default function App() {
           <Route path="settings" element={<AdminSettingsPage />} />
           <Route path="inbox" element={<AdminInboxPage />} />
           <Route path="ticket-log" element={<AdminTicketLogPage />} />
+          <Route path="errors" element={<AdminErrorsPage />} />
           <Route path="activity" element={<AdminActivityPage />} />
         </Route>
         <Route path="/customer-care" element={<CustomerCareLayout />}>

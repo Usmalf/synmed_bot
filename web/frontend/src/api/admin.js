@@ -69,6 +69,22 @@ export async function fetchAdminAuditLogs(limit = 100) {
   return body;
 }
 
+export async function fetchAdminErrorLogs(limit = 100, severity = "all") {
+  const response = await fetch(
+    `${API_BASE_URL}/admin/error-logs?limit=${encodeURIComponent(limit)}&severity=${encodeURIComponent(severity)}`,
+    {
+      headers: {
+        ...authHeaders(),
+      },
+    },
+  );
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body?.detail || `Request failed: ${response.status}`);
+  }
+  return body;
+}
+
 export async function fetchAdminMail() {
   const response = await fetch(`${API_BASE_URL}/admin/mail`, {
     headers: { ...authHeaders() },

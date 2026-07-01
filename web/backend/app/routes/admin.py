@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from services.paystack import PaystackError
 from services.backups import create_database_backup, create_full_backup_archive, get_backup_status
+from services.operational_errors import get_operational_error_summary, list_operational_errors
 from pydantic import BaseModel
 
 from ..deps import require_admin
@@ -174,6 +175,14 @@ def admin_dismiss_alert(alert_id: str, session: dict = Depends(require_admin)):
 @router.get("/audit-logs")
 def admin_audit_logs(limit: int = 100, session: dict = Depends(require_admin)):
     return {"logs": list_admin_audit_logs(limit)}
+
+
+@router.get("/error-logs")
+def admin_error_logs(limit: int = 100, severity: str = "all", session: dict = Depends(require_admin)):
+    return {
+        "summary": get_operational_error_summary(),
+        "logs": list_operational_errors(limit, severity),
+    }
 
 
 @router.get("/mail")

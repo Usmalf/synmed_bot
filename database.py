@@ -338,6 +338,22 @@ def init_db():
     """)
 
     cursor.execute("""
+    CREATE TABLE IF NOT EXISTS operational_error_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        message TEXT NOT NULL,
+        path TEXT,
+        method TEXT,
+        status_code INTEGER,
+        user_role TEXT,
+        user_id TEXT,
+        details TEXT,
+        created_at TEXT NOT NULL
+    )
+    """)
+
+    cursor.execute("""
     CREATE TABLE IF NOT EXISTS medical_report_requests (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         request_id TEXT NOT NULL UNIQUE,

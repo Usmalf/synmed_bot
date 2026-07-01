@@ -16,6 +16,7 @@ import {
   fetchAdminConsultation,
   fetchAdminConsultations,
   fetchAdminDeliverySettings,
+  fetchAdminErrorLogs,
   fetchAdminHealthTips,
   fetchAdminMedicalReportRequests,
   fetchAdminMail,
@@ -2074,6 +2075,94 @@ export function AdminTicketLogPage() {
           </div>
         </div>
         <Pager page={page} total={state.tickets.length} onChange={setPage} />
+      </DataPanel>
+    </>
+  );
+}
+
+export function AdminErrorsPage() {
+  const [state, setState] = useState({
+    status: "loading",
+    message: "Loading backend error logs...",
+    logs: [],
+    summary: null,
+  });
+  const [severity, setSeverity] = useState("all");
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+
+  async function load() {
+    setState((current) => ({ ...current, status: "loading", message: "Loading backend error logs..." }));
+    try {
+      const result = await fetchAdminErrorLogs(250, severity);
+      setState({
+        status: "success",
+        message: "",
+        logs: result.logs || [],
+        summary: result.summary || null,
+      });
+    } catch (error) {
+      setState({
+        status: "error",
+        message: error.message || "Unable to load backend error logs.",
+        logs: [],
+        summary: null,
+      });
+    }
+  }
+  useEffect(() => { load(); }, [severity]);
+
+  const logs = state.logs.filter((log) => !query.trim() || [
+    log.source,
+    log.severity,
+    log.message,
+    log.path,
+    log.method,
+    log.status_code,
+    log.user_role,
+    log.user_id,
+    log.details,
+  ].some((value) => String(value || "").toLowerCase().includes(query.toLowerCase().trim())));
+  const visible = logs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  return (
+    <>
+      <PageHeader title="Errors" actions={<button className="button button--secondary" type="button" onClick={load}>Refresh</button>} />
+      <Notice state={state} />
+      <DataPanel title="Error summary">
+        <div className="admin-stats">
+          <article><span>Total</span><strong>{state.summary?.total || 0}</strong></article>
+          <article><span>Errors</span><strong>{state.summary?.by_severity?.error || 0}</strong></article>
+          <article><span>Warnings</span><strong>{state.summary?.by_severity?.warning || 0}</strong></article>
+          <article><span>Latest</span><strong>{state.summary?.latest ? formatDate(state.summary.latest.created_at) : "None"}</strong></article>
+        </div>
+      </DataPanel>
+      <DataPanel title="Backend error log" subtitle={`${logs.length} matching event(s)`}>
+        <div className="admin-toolbar">
+          <input placeholder="Search source, path, message, user..." value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} />
+          <select value={severity} onChange={(event) => { setSeverity(event.target.value); setPage(1); }}>
+            <option value="all">All severities</option>
+            <option value="error">Errors</option>
+            <option value="warning">Warnings</option>
+            <option value="info">Info</option>
+          </select>
+        </div>
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead><tr><th>Time</th><th>Source</th><th>Request</th><th>Message</th><th>User</th></tr></thead>
+            <tbody>{visible.map((log) => (
+              <tr key={log.id}>
+                <td>{formatDate(log.created_at)}</td>
+                <td><strong>{formatAction(log.source || "system")}</strong><span>{log.severity || "error"}</span></td>
+                <td>{log.method || "N/A"}<span>{log.path || "No path"}{log.status_code ? ` / ${log.status_code}` : ""}</span></td>
+                <td><strong>{log.message}</strong>{log.details ? <span>{log.details}</span> : null}</td>
+                <td>{log.user_role || "N/A"}<span>{log.user_id || "No user"}</span></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+        {!visible.length ? <EmptyState>No backend errors match this view.</EmptyState> : null}
+        <Pager page={page} total={logs.length} onChange={setPage} />
       </DataPanel>
     </>
   );
