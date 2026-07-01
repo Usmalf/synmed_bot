@@ -679,7 +679,7 @@ def create_customer_care_account(admin_id: int, email: str, display_name: str, p
                 email, display_name, password_hash, status,
                 created_by_admin_id, created_at, updated_at
             )
-            VALUES (?, ?, ?, 'active', ?, ?, ?)
+            VALUES (?, ?, ?, 'pending', ?, ?, ?)
             """,
             (
                 normalized_email,
@@ -696,14 +696,24 @@ def create_customer_care_account(admin_id: int, email: str, display_name: str, p
     account = get_customer_care_account_by_identifier(str(account_id))
     return {
         "created": True,
-        "message": "Customer care account created.",
+        "message": "Customer care account request created. Approve it before the agent can sign in.",
         "account": _public_customer_care_account(account),
     }
 
 
 def set_customer_care_account_status(account_id: int, status: str) -> dict:
     normalized_status = (status or "").strip().lower()
-    if normalized_status not in {"active", "disabled"}:
+    aliases = {
+        "approve": "active",
+        "activate": "active",
+        "reactivate": "active",
+        "disable": "suspended",
+        "disabled": "suspended",
+        "suspend": "suspended",
+        "reject": "rejected",
+    }
+    normalized_status = aliases.get(normalized_status, normalized_status)
+    if normalized_status not in {"pending", "active", "rejected", "suspended"}:
         raise HTTPException(status_code=400, detail="Unsupported customer care account status.")
     account = get_customer_care_account_by_identifier(str(account_id))
     if not account:

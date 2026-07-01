@@ -127,8 +127,18 @@ def get_operational_error_summary() -> dict:
             """
         )
         latest = cursor.fetchone()
+        cursor.execute(
+            """
+            SELECT severity, COUNT(*) AS count
+            FROM operational_error_logs
+            WHERE datetime(created_at) >= datetime('now', '-24 hours')
+            GROUP BY severity
+            """
+        )
+        last_24h = {row["severity"]: int(row["count"]) for row in cursor.fetchall()}
     return {
         "total": total,
         "by_severity": by_severity,
+        "last_24h": last_24h,
         "latest": dict(latest) if latest else None,
     }

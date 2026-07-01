@@ -413,7 +413,21 @@ export default function CustomerCareDashboardPage() {
     if (!canManageAccounts) return;
     setBusy(true);
     try {
-      await updateCustomerCareAccountStatus(account.account_id, account.status === "active" ? "disabled" : "active");
+      const nextStatus = account.status === "active" ? "suspended" : "active";
+      await updateCustomerCareAccountStatus(account.account_id, nextStatus);
+      await load("Refreshing customer care accounts...");
+    } catch (error) {
+      setState((current) => ({ ...current, status: "error", message: error.message || "Unable to update account." }));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function updateAccountStatus(account, status) {
+    if (!canManageAccounts) return;
+    setBusy(true);
+    try {
+      await updateCustomerCareAccountStatus(account.account_id, status);
       await load("Refreshing customer care accounts...");
     } catch (error) {
       setState((current) => ({ ...current, status: "error", message: error.message || "Unable to update account." }));
@@ -863,7 +877,7 @@ export default function CustomerCareDashboardPage() {
         <section className="admin-panel customer-care-accounts">
           <header className="admin-panel__header">
             <h2>Customer care accounts</h2>
-            <p>Create support logins with access only to the customer care desk.</p>
+            <p>Create customer-care requests, then approve only agents cleared for desk access.</p>
           </header>
           <div className="customer-care-account-grid">
             <form className="admin-form" onSubmit={submitAccount}>
@@ -894,7 +908,7 @@ export default function CustomerCareDashboardPage() {
                 />
               </label>
               <button className="button button--primary" type="submit" disabled={busy}>
-                Create account
+                Create request
               </button>
             </form>
             <div className="customer-care-account-list">
@@ -906,10 +920,22 @@ export default function CustomerCareDashboardPage() {
                     <span>Last login: {formatDate(account.last_login_at)}</span>
                   </div>
                   <div>
-                    <StatusPill label={account.status} tone={account.status === "active" ? "success" : "danger"} />
-                    <button type="button" onClick={() => toggleAccount(account)} disabled={busy}>
-                      {account.status === "active" ? "Disable" : "Activate"}
-                    </button>
+                    <StatusPill
+                      label={account.status}
+                      tone={account.status === "active" ? "success" : account.status === "pending" ? "warning" : "danger"}
+                    />
+                    {account.status === "pending" ? (
+                      <>
+                        <button type="button" onClick={() => updateAccountStatus(account, "active")} disabled={busy}>Approve</button>
+                        <button type="button" onClick={() => updateAccountStatus(account, "rejected")} disabled={busy}>Reject</button>
+                      </>
+                    ) : null}
+                    {account.status === "active" ? (
+                      <button type="button" onClick={() => toggleAccount(account)} disabled={busy}>Suspend</button>
+                    ) : null}
+                    {["suspended", "rejected"].includes(account.status) ? (
+                      <button type="button" onClick={() => updateAccountStatus(account, "active")} disabled={busy}>Reactivate</button>
+                    ) : null}
                   </div>
                 </article>
               ))}

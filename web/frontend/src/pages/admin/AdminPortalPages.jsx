@@ -282,6 +282,8 @@ export function AdminOverviewPage() {
     ["Medical reports", state.summary?.medical_report_requests],
     ["Partners", state.summary?.partners],
     ["Pending partners", state.summary?.pending_partners],
+    ["Verified customer agents", state.summary?.verified_customer_care_agents],
+    ["Pending customer agents", state.summary?.pending_customer_care_agents],
     ["Due follow-ups", state.summary?.due_followups],
   ];
 
@@ -2133,6 +2135,7 @@ export function AdminErrorsPage() {
         <div className="admin-stats">
           <article><span>Total</span><strong>{state.summary?.total || 0}</strong></article>
           <article><span>Errors</span><strong>{state.summary?.by_severity?.error || 0}</strong></article>
+          <article><span>Errors 24h</span><strong>{state.summary?.last_24h?.error || 0}</strong></article>
           <article><span>Warnings</span><strong>{state.summary?.by_severity?.warning || 0}</strong></article>
           <article><span>Latest</span><strong>{state.summary?.latest ? formatDate(state.summary.latest.created_at) : "None"}</strong></article>
         </div>

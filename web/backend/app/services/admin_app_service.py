@@ -1,5 +1,7 @@
 from database import get_connection
+from services.backups import get_backup_status
 from services.followups import get_due_follow_up_reminders
+from services.operational_errors import get_operational_error_summary
 from services.patient_records import get_registered_patient_count
 from services.paystack import (
     grant_manual_payment_override,
@@ -23,6 +25,7 @@ from .settings_service import (
     update_payment_settings,
 )
 from pathlib import Path
+from .support_ai_service import list_support_tickets
 
 
 UTC = timezone.utc
@@ -117,6 +120,9 @@ def _get_admin_alert_states(admin_id: int) -> dict[tuple[str, str], dict]:
 def get_admin_alerts(admin_id: int | None = None) -> dict:
     summary = get_admin_summary()
     payment_records = list_admin_payments()["payments"]
+    backup_status = get_backup_status()
+    error_summary = get_operational_error_summary()
+    support_tickets = list_support_tickets("open", 250)
     verified_doctors = summary["verified_doctor_records"]
     expired = [doctor for doctor in verified_doctors if (doctor["license_status"].get("days_left") or 0) < 0]
     expiring = [
@@ -140,6 +146,61 @@ def get_admin_alerts(admin_id: int | None = None) -> dict:
             "title": "Doctor applications awaiting review",
             "message": f"{summary['pending_doctors']} application(s) need an admin decision.",
             "href": "/admin/doctors",
+        })
+    if summary.get("pending_customer_care_agents"):
+        alerts.append({
+            "id": "pending-customer-care-agents",
+            "tone": "warning",
+            "title": "Customer-care accounts awaiting approval",
+            "message": f"{summary['pending_customer_care_agents']} customer-care account request(s) need review.",
+            "href": "/customer-care?panel=accounts",
+        })
+    if support_tickets:
+        alerts.append({
+            "id": "open-support-tickets",
+            "tone": "warning",
+            "title": "Open customer support tickets",
+            "message": f"{len(support_tickets)} support ticket(s) are still open.",
+            "href": "/admin/ticket-log?filter=open",
+        })
+    recent_errors = error_summary.get("last_24h", {}).get("error", 0)
+    if recent_errors:
+        alerts.append({
+            "id": "backend-errors",
+            "tone": "danger",
+            "title": "Backend errors recorded",
+            "message": f"{recent_errors} backend error(s) were recorded in the last 24 hours.",
+            "href": "/admin/errors?severity=error",
+        })
+    if not backup_status.get("latest_backup"):
+        alerts.append({
+            "id": "backup-missing",
+            "tone": "danger",
+            "title": "No backup has been created",
+            "message": "Create and download a full backup from admin settings.",
+            "href": "/admin/settings",
+        })
+    elif backup_status["latest_backup"].get("created_at"):
+        try:
+            latest_created = datetime.fromisoformat(backup_status["latest_backup"]["created_at"])
+            age_hours = (datetime.now(UTC) - latest_created).total_seconds() / 3600
+        except ValueError:
+            age_hours = 0
+        if age_hours > 72:
+            alerts.append({
+                "id": "backup-old",
+                "tone": "warning",
+                "title": "Latest backup is older than 72 hours",
+                "message": "Download a fresh full backup before further production changes.",
+                "href": "/admin/settings",
+            })
+    if not backup_status.get("storage_exists"):
+        alerts.append({
+            "id": "storage-missing",
+            "tone": "danger",
+            "title": "Persistent storage folder is missing",
+            "message": "Stored documents, media, and licence uploads may not persist.",
+            "href": "/admin/settings",
         })
     if expired:
         alerts.append({
@@ -403,12 +464,52 @@ def _active_consultation_count() -> int:
     return row["total"] if row else 0
 
 
+def _customer_care_account_summary() -> dict:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT status, COUNT(*) AS total
+            FROM customer_care_accounts
+            GROUP BY status
+            """
+        )
+        counts = {row["status"] or "unknown": int(row["total"]) for row in cursor.fetchall()}
+        cursor.execute(
+            """
+            SELECT account_id, email, display_name, status, created_by_admin_id,
+                   created_at, updated_at, last_login_at
+            FROM customer_care_accounts
+            ORDER BY
+                CASE status
+                    WHEN 'pending' THEN 0
+                    WHEN 'active' THEN 1
+                    WHEN 'suspended' THEN 2
+                    WHEN 'rejected' THEN 3
+                    ELSE 4
+                END,
+                display_name COLLATE NOCASE ASC
+            LIMIT 20
+            """
+        )
+        records = [dict(row) for row in cursor.fetchall()]
+    return {
+        "total": sum(counts.values()),
+        "active": counts.get("active", 0),
+        "pending": counts.get("pending", 0),
+        "suspended": counts.get("suspended", 0),
+        "rejected": counts.get("rejected", 0),
+        "records": records,
+    }
+
+
 def get_admin_summary() -> dict:
     verified_doctors = _fetch_verified_doctors()
     suspended_doctors = _fetch_suspended_doctors()
     medical_report_requests = list_admin_medical_report_requests()["requests"]
     partner_summary = list_partner_facilities()["summary"]
     pending_doctor_applications = list_pending_doctor_applications()
+    customer_care_summary = _customer_care_account_summary()
     return {
         "registered_patients": get_registered_patient_count(),
         "verified_doctors": len(verified_doctors),
@@ -423,6 +524,12 @@ def get_admin_summary() -> dict:
         "partners": partner_summary["total"],
         "active_partners": partner_summary["active"],
         "pending_partners": partner_summary["pending"],
+        "customer_care_agents": customer_care_summary["total"],
+        "verified_customer_care_agents": customer_care_summary["active"],
+        "pending_customer_care_agents": customer_care_summary["pending"],
+        "suspended_customer_care_agents": customer_care_summary["suspended"],
+        "rejected_customer_care_agents": customer_care_summary["rejected"],
+        "customer_care_account_records": customer_care_summary["records"],
     }
 
 
