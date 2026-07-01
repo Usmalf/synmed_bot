@@ -126,6 +126,35 @@ body[data-background-theme="light"] .login-page__overlay-card {
   text-align: center;
 }
 
+.login-page__verification {
+  display: grid;
+  gap: 0.95rem;
+  justify-items: center;
+  margin-inline: auto;
+  text-align: center;
+}
+
+.login-page__verification-kicker {
+  border: 1px solid rgba(243, 181, 74, 0.34);
+  border-radius: 999px;
+  color: var(--login-link-strong);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  margin: 0;
+  padding: 0.38rem 0.75rem;
+  text-transform: uppercase;
+}
+
+.login-page__verification--success .login-page__verification-kicker {
+  border-color: rgba(40, 164, 137, 0.36);
+  color: #77e5c6;
+}
+
+body[data-background-theme="light"] .login-page__verification--success .login-page__verification-kicker {
+  color: #12775f;
+}
+
 .login-page .lookup-result {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 18px;

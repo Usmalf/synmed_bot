@@ -1,11 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import AuthShell from "../components/AuthShell.jsx";
-import SectionCard from "../components/SectionCard.jsx";
 import "../styles/forms.css";
-import "../styles/auth.css";
-import "../styles/patient.css";
-import "../styles/patient-portal.css";
+import "../styles/login.css";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
@@ -13,7 +9,8 @@ export default function PatientVerifyEmailPage() {
   const [searchParams] = useSearchParams();
   const [status, setStatus] = useState({
     kind: "loading",
-    message: "Verifying your email address...",
+    title: "Checking your email link",
+    message: "Please wait while SynMed confirms this email address.",
   });
 
   useEffect(() => {
@@ -26,7 +23,8 @@ export default function PatientVerifyEmailPage() {
         if (!ignore) {
           setStatus({
             kind: "error",
-            message: "Verification link is incomplete. Open the latest email link again.",
+            title: "This link is incomplete",
+            message: "Open the latest verification email from SynMed and try again.",
           });
         }
         return;
@@ -44,20 +42,22 @@ export default function PatientVerifyEmailPage() {
 
         const text = await response.text();
         if (!response.ok) {
-          throw new Error(text || "Unable to verify email right now.");
+          throw new Error(text || "Unable to verify this email right now.");
         }
 
         if (!ignore) {
           setStatus({
             kind: "success",
-            message: "Email verified successfully. You can now sign in to SynMed Web.",
+            title: "Your email has been verified",
+            message: "You can now sign in and continue your care on SynMed Telehealth.",
           });
         }
       } catch (error) {
         if (!ignore) {
           setStatus({
             kind: "error",
-            message: error.message || "Unable to verify email right now.",
+            title: "We could not verify this link",
+            message: error.message || "Please use the latest verification email or request a new link.",
           });
         }
       }
@@ -70,25 +70,23 @@ export default function PatientVerifyEmailPage() {
   }, [searchParams]);
 
   return (
-    <AuthShell
-      eyebrow="Email Verification"
-      title="Complete registration by confirming the patient email."
-      body="This is the final checkpoint after registration payment, and it unlocks the normal patient sign-in flow."
-      asideTitle="One last step after payment."
-      asideBody="SynMed uses email verification to finish account activation cleanly before the patient tries to log in."
-    >
-      <SectionCard
-        title="Verify Email"
-        subtitle="This completes the patient web registration process."
-      >
-        <div className={`lookup-result lookup-result--${status.kind}`}>
-          <p className="lookup-result__message">{status.message}</p>
+    <div className="login-page">
+      <div className="login-page__wrap">
+        <div className="login-page__brand">
+          <img className="login-page__brand-logo" src="/logo-removebg-preview.png" alt="SynMed Telehealth" />
         </div>
 
-        <p className="patient-auth-link">
-          Continue to <Link to="/signin">patient sign in</Link>
-        </p>
-      </SectionCard>
-    </AuthShell>
+        <div className={`login-page__verification login-page__verification--${status.kind}`}>
+          <p className="login-page__verification-kicker">
+            {status.kind === "success" ? "Success" : status.kind === "loading" ? "Verifying" : "Action needed"}
+          </p>
+          <h1 className="login-page__inline-title">{status.title}</h1>
+          <p className="login-page__plain-subtitle">{status.message}</p>
+          <Link className="button button--primary login-page__button" to="/signin">
+            Continue to sign in
+          </Link>
+        </div>
+      </div>
+    </div>
   );
 }
