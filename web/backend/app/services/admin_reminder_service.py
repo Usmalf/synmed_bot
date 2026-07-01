@@ -53,6 +53,21 @@ def _admin_recipients() -> list[dict]:
         return [dict(row) for row in cursor.fetchall()]
 
 
+def _admin_recipient(admin_id: int | str) -> dict | None:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT admin_id, email, display_name
+            FROM admin_accounts
+            WHERE admin_id = ? AND email IS NOT NULL AND trim(email) != ''
+            """,
+            (admin_id,),
+        )
+        row = cursor.fetchone()
+    return dict(row) if row else None
+
+
 def _last_sent_at(reminder_key: str) -> datetime | None:
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -62,6 +77,34 @@ def _last_sent_at(reminder_key: str) -> datetime | None:
         )
         row = cursor.fetchone()
     return _parse_iso(row["sent_at"]) if row else None
+
+
+def list_admin_email_reminders() -> dict:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT reminder_key, sent_at, details
+            FROM admin_email_reminders
+            ORDER BY sent_at DESC
+            """
+        )
+        rows = cursor.fetchall()
+
+    reminders = []
+    for row in rows:
+        details = {}
+        if row["details"]:
+            try:
+                details = json.loads(row["details"])
+            except json.JSONDecodeError:
+                details = {"raw": row["details"]}
+        reminders.append({
+            "reminder_key": row["reminder_key"],
+            "sent_at": row["sent_at"],
+            "details": details,
+        })
+    return {"reminders": reminders}
 
 
 def _mark_sent(reminder_key: str, details: dict, sent_at: datetime) -> None:
@@ -135,6 +178,37 @@ def _send_admin_reminder(reminder: dict, now: datetime) -> dict:
         "sent": sent_count,
         "failed": failed,
         "reminder_key": reminder["key"],
+    }
+
+
+def send_admin_reminder_test(admin_id: int | str) -> dict:
+    admin = _admin_recipient(admin_id)
+    if not admin:
+        return {"sent": False, "message": "No email address is saved for this admin account."}
+
+    now = _now()
+    body = (
+        "This is a SynMed admin reminder test.\n\n"
+        "If you received this email, admin operational reminder delivery is working."
+    )
+    sent = send_plain_email(admin["email"], "SynMed admin reminder test", body)
+    if sent:
+        _mark_sent(
+            f"manual-test-admin-{admin['admin_id']}",
+            {"sent_count": 1, "target": admin["email"]},
+            now,
+        )
+    else:
+        log_operational_error(
+            "admin_reminder_test",
+            "warning",
+            "Admin reminder test email could not be sent.",
+            details={"admin_id": admin["admin_id"], "target": admin["email"]},
+        )
+    return {
+        "sent": sent,
+        "message": "Reminder test email sent." if sent else "Reminder test email could not be sent.",
+        "delivery_target": admin["email"],
     }
 
 

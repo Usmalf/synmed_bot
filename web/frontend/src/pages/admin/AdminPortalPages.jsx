@@ -10,6 +10,7 @@ import {
   deleteAdminPaymentAttention,
   deleteAdminHealthTip,
   downloadAdminBackup,
+  fetchAdminEmailReminders,
   fetchAdminAlerts,
   fetchAdminAuditLogs,
   fetchAdminBackupStatus,
@@ -31,6 +32,7 @@ import {
   reactivateDoctorAccount,
   rejectDoctorApplication,
   sendDoctorLicenseReminder,
+  sendAdminReminderTest,
   sendAdminPatientDocument,
   sendAdminMail,
   grantAdminConsultationAccess,
@@ -1671,11 +1673,13 @@ export function AdminSettingsPage() {
   async function load() {
     setState((current) => ({ ...current, status: "loading", message: "Checking delivery settings..." }));
     try {
-      const [settings, backupStatus] = await Promise.all([
+      const [settings, backupStatus, reminderStatus] = await Promise.all([
         fetchAdminDeliverySettings(),
         fetchAdminBackupStatus(),
+        fetchAdminEmailReminders(),
       ]);
       settings.backups = backupStatus;
+      settings.reminders = reminderStatus.reminders || [];
       setState({ status: "success", message: "", settings });
       if (settings.payments) {
         setPaymentForm({
@@ -1789,10 +1793,32 @@ export function AdminSettingsPage() {
     }
   }
 
+  async function sendReminderTest() {
+    setBusy(true);
+    try {
+      const result = await sendAdminReminderTest();
+      const reminderStatus = await fetchAdminEmailReminders();
+      setState((current) => ({
+        ...current,
+        status: "success",
+        message: `${result.message} Delivery target: ${result.delivery_target}`,
+        settings: {
+          ...(current.settings || {}),
+          reminders: reminderStatus.reminders || [],
+        },
+      }));
+    } catch (error) {
+      setState((current) => ({ ...current, status: "error", message: error.message || "Unable to send reminder test." }));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const settingsPanels = [
     { id: "payments", label: "Payment values" },
     { id: "readiness", label: "System readiness" },
     { id: "backups", label: "Backups" },
+    { id: "reminders", label: "Reminders" },
     { id: "email", label: "Email branding" },
     { id: "test", label: "Delivery test" },
   ];
@@ -1877,6 +1903,58 @@ export function AdminSettingsPage() {
             <button className="button button--primary" type="button" disabled={busy} onClick={() => downloadBackup("full")}>
               {busy ? "Preparing..." : "Download full backup"}
             </button>
+          </div>
+        </DataPanel>
+        ) : null}
+        {activeSettingsPanel === "reminders" ? (
+        <DataPanel title="Admin email reminders">
+          <div className="admin-settings-actions admin-settings-actions--top">
+            <button className="button button--primary" type="button" disabled={busy} onClick={sendReminderTest}>
+              {busy ? "Sending..." : "Send reminder test"}
+            </button>
+            <button className="button button--secondary" type="button" disabled={busy} onClick={async () => {
+              setBusy(true);
+              try {
+                const reminderStatus = await fetchAdminEmailReminders();
+                setState((current) => ({
+                  ...current,
+                  status: "success",
+                  message: "Reminder history refreshed.",
+                  settings: {
+                    ...(current.settings || {}),
+                    reminders: reminderStatus.reminders || [],
+                  },
+                }));
+              } catch (error) {
+                setState((current) => ({ ...current, status: "error", message: error.message || "Unable to refresh reminder history." }));
+              } finally {
+                setBusy(false);
+              }
+            }}>
+              Refresh reminders
+            </button>
+          </div>
+          <div className="admin-delivery-list">
+            {(state.settings?.reminders || []).map((reminder) => (
+              <article key={reminder.reminder_key}>
+                <div>
+                  <strong>{formatAction(reminder.reminder_key.replace(/^admin-alert-/, "").replace(/^manual-test-admin-/, "manual test "))}</strong>
+                  <p>Last sent: {formatDate(reminder.sent_at)}</p>
+                  {reminder.details?.sent_count ? <p>Delivered to {reminder.details.sent_count} admin email(s).</p> : null}
+                  {reminder.details?.failed?.length ? <p>Failed: {reminder.details.failed.join(", ")}</p> : null}
+                </div>
+                <StatusPill label={reminder.reminder_key.includes("test") ? "Test" : "Active"} tone={reminder.reminder_key.includes("test") ? "neutral" : "success"} />
+              </article>
+            ))}
+            {!state.settings?.reminders?.length ? (
+              <article>
+                <div>
+                  <strong>No reminder emails sent yet</strong>
+                  <p>Use the test button to confirm delivery or wait for a real admin alert.</p>
+                </div>
+                <StatusPill label="Empty" tone="warning" />
+              </article>
+            ) : null}
           </div>
         </DataPanel>
         ) : null}

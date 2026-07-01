@@ -372,6 +372,33 @@ export async function testAdminDelivery(channel, target) {
   return body;
 }
 
+export async function fetchAdminEmailReminders() {
+  const response = await fetch(`${API_BASE_URL}/admin/reminders/email`, {
+    headers: {
+      ...authHeaders(),
+    },
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body?.detail || `Request failed: ${response.status}`);
+  }
+  return body;
+}
+
+export async function sendAdminReminderTest() {
+  const response = await fetch(`${API_BASE_URL}/admin/reminders/email/test`, {
+    method: "POST",
+    headers: {
+      ...authHeaders(),
+    },
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body?.detail || `Request failed: ${response.status}`);
+  }
+  return body;
+}
+
 export async function updateAdminPaymentSettings(payload) {
   const response = await fetch(`${API_BASE_URL}/admin/settings/payments`, {
     method: "PUT",

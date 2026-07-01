@@ -37,6 +37,7 @@ from ..services.admin_app_service import (
     update_admin_email_branding_settings,
     update_admin_payment_settings,
 )
+from ..services.admin_reminder_service import list_admin_email_reminders, send_admin_reminder_test
 from ..services.medical_report_app_service import assign_medical_report_request, list_admin_medical_report_requests
 from ..services.partner_app_service import create_partner_facility, list_partner_facilities, update_partner_status
 from ..services.payment_app_service import verify_web_payment
@@ -462,6 +463,26 @@ def admin_delivery_test(payload: DeliveryTestPayload, session: dict = Depends(re
         "delivery_channel",
         payload.channel,
         {"target": payload.target},
+    )
+    return result
+
+
+@router.get("/reminders/email")
+def admin_email_reminders(session: dict = Depends(require_admin)):
+    return list_admin_email_reminders()
+
+
+@router.post("/reminders/email/test")
+def admin_email_reminder_test(session: dict = Depends(require_admin)):
+    result = send_admin_reminder_test(session["user_id"])
+    if not result["sent"]:
+        raise HTTPException(status_code=503, detail=result["message"])
+    record_admin_audit(
+        session["user_id"],
+        "admin_reminder_test_sent",
+        "admin",
+        session["user_id"],
+        {"target": result["delivery_target"]},
     )
     return result
 
