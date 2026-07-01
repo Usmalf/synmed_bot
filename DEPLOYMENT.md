@@ -28,9 +28,10 @@ Required environment variables:
 
 ```text
 DATABASE_PATH=/var/data/synmed.db
+DATABASE_URL=postgresql://...
 SYNMED_STORAGE_ROOT=/var/data/storage
 SYNMED_BACKUP_ROOT=/var/data/backups
-AUTH_SECRET_KEY=<generate a long random secret>
+AUTH_SECRET_KEY=<stable long random secret>
 AUTH_DEV_OTP_VISIBLE=0
 FRONTEND_BASE_URL=https://your-frontend-domain
 AUTH_VERIFY_BASE_URL=https://your-frontend-domain/patient/verify-email
@@ -48,6 +49,10 @@ SMTP_FROM_EMAIL=<sender email>
 SMTP_USE_TLS=0
 SMTP_USE_SSL=1
 ```
+
+When `DATABASE_URL` is set, the app uses PostgreSQL. `DATABASE_PATH` can remain as a harmless SQLite fallback.
+
+`AUTH_SECRET_KEY` is part of password hashing and OTP/session signing. Do not rotate it casually after users have registered. If migrating from SQLite to PostgreSQL, keep the same value that created the existing passwords.
 
 ## Frontend
 
@@ -67,6 +72,12 @@ Required environment variable:
 
 ```text
 VITE_API_BASE_URL=https://your-backend-domain
+```
+
+You can check local or copied deployment environment values without printing secrets:
+
+```powershell
+python scripts/check_deployment_env.py --strict
 ```
 
 ## Telegram Bot Worker

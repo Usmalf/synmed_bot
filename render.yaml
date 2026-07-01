@@ -35,7 +35,7 @@ services:
       - key: ADMIN_IDS
         sync: false
       - key: AUTH_SECRET_KEY
-        generateValue: true
+        sync: false
       - key: PAYSTACK_SECRET_KEY
         sync: false
       - key: PAYSTACK_PUBLIC_KEY
