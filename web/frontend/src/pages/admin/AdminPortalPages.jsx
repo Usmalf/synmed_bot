@@ -1885,7 +1885,7 @@ export function AdminSettingsPage() {
                 <strong>Database</strong>
                 <p>
                   {state.settings?.backups?.database_provider === "postgresql"
-                    ? "PostgreSQL connection is active. Database file download is disabled until PostgreSQL dump backups are configured."
+                    ? "PostgreSQL connection is active. Database downloads export SynMed table data as JSON."
                     : state.settings?.backups?.database_exists ? `${formatBytes(state.settings.backups.database_size)} at ${state.settings.backups.database_path}` : "Database file not found."}
                 </p>
               </div>
@@ -1908,7 +1908,7 @@ export function AdminSettingsPage() {
           </div>
           <div className="admin-settings-actions">
             <button className="button button--secondary" type="button" disabled={busy || state.settings?.backups?.database_backup_supported === false} onClick={() => downloadBackup("database")}>
-              {busy ? "Preparing..." : "Download database"}
+              {busy ? "Preparing..." : state.settings?.backups?.database_provider === "postgresql" ? "Download database JSON" : "Download database"}
             </button>
             <button className="button button--primary" type="button" disabled={busy || state.settings?.backups?.database_backup_supported === false} onClick={() => downloadBackup("full")}>
               {busy ? "Preparing..." : "Download full backup"}

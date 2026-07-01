@@ -97,6 +97,8 @@ Admin users can open **Admin > Settings > Backups** to download:
 - **Database backup**: a consistent SQLite snapshot of `DATABASE_PATH`.
 - **Full backup**: a ZIP archive containing `database/synmed.db` plus the contents of `SYNMED_STORAGE_ROOT` under `storage/`.
 
+When PostgreSQL is active, **Database backup** exports SynMed table data as a JSON file. **Full backup** includes that JSON database export plus stored files.
+
 Recommended routine:
 
 1. Download a full backup before any major deployment, database migration, or manual production data change.
@@ -183,4 +185,4 @@ python scripts/verify_postgres_migration.py `
 4. Confirm admin login, patient login, doctor login, payments, documents, support tickets, and consultations.
 5. Keep the old SQLite backup until PostgreSQL has been verified in production.
 
-Current limitation: Admin database backup downloads are SQLite-only. When PostgreSQL is active, the backup buttons are disabled until PostgreSQL dump backups are configured.
+Current limitation: PostgreSQL admin backups are JSON exports for recovery/audit portability, not native `pg_dump` archives. For full point-in-time PostgreSQL restore workflows, also enable Render PostgreSQL backups or add a managed `pg_dump` storage routine.
