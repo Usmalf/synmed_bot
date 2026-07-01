@@ -16,6 +16,8 @@ services:
         value: 3.11.9
       - key: SYNMED_STORAGE_ROOT
         value: /var/data/storage
+      - key: SYNMED_BACKUP_ROOT
+        value: /var/data/backups
       - key: AUTH_DEV_OTP_VISIBLE
         value: "0"
       - key: PAYSTACK_CURRENCY

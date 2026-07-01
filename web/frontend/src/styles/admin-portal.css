@@ -625,6 +625,13 @@
   padding: 0.85rem 1rem;
 }
 
+.admin-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: 0.9rem;
+}
+
 .admin-rating-summary-button {
   background: transparent;
   border: 0;

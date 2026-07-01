@@ -9,8 +9,10 @@ import {
   createAdminHealthTip,
   deleteAdminPaymentAttention,
   deleteAdminHealthTip,
+  downloadAdminBackup,
   fetchAdminAlerts,
   fetchAdminAuditLogs,
+  fetchAdminBackupStatus,
   fetchAdminConsultation,
   fetchAdminConsultations,
   fetchAdminDeliverySettings,
@@ -220,6 +222,15 @@ function formatCurrency(amount, currency = "NGN") {
   } catch {
     return `${currency || "NGN"} ${numeric.toLocaleString()}`;
   }
+}
+
+function formatBytes(value = 0) {
+  const bytes = Number(value || 0);
+  if (!bytes) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const amount = bytes / 1024 ** index;
+  return `${amount.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
 }
 
 function csvCell(value) {
@@ -1657,7 +1668,11 @@ export function AdminSettingsPage() {
   async function load() {
     setState((current) => ({ ...current, status: "loading", message: "Checking delivery settings..." }));
     try {
-      const settings = await fetchAdminDeliverySettings();
+      const [settings, backupStatus] = await Promise.all([
+        fetchAdminDeliverySettings(),
+        fetchAdminBackupStatus(),
+      ]);
+      settings.backups = backupStatus;
       setState({ status: "success", message: "", settings });
       if (settings.payments) {
         setPaymentForm({
@@ -1750,9 +1765,31 @@ export function AdminSettingsPage() {
     }
   }
 
+  async function downloadBackup(kind) {
+    setBusy(true);
+    try {
+      const result = await downloadAdminBackup(kind);
+      const backupStatus = await fetchAdminBackupStatus();
+      setState((current) => ({
+        ...current,
+        status: "success",
+        message: `${result.filename} downloaded.`,
+        settings: {
+          ...(current.settings || {}),
+          backups: backupStatus,
+        },
+      }));
+    } catch (error) {
+      setState((current) => ({ ...current, status: "error", message: error.message || "Unable to create backup." }));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const settingsPanels = [
     { id: "payments", label: "Payment values" },
     { id: "readiness", label: "System readiness" },
+    { id: "backups", label: "Backups" },
     { id: "email", label: "Email branding" },
     { id: "test", label: "Delivery test" },
   ];
@@ -1802,6 +1839,41 @@ export function AdminSettingsPage() {
               <div><strong>{state.settings?.paystack?.label || "Paystack"}</strong><p>{state.settings?.paystack?.message || "Checking payment gateway..."}</p></div>
               <StatusPill label={state.settings?.paystack?.ready ? "Ready" : "Setup needed"} tone={state.settings?.paystack?.ready ? "success" : "warning"} />
             </article>
+          </div>
+        </DataPanel>
+        ) : null}
+        {activeSettingsPanel === "backups" ? (
+        <DataPanel title="Backups" subtitle="Download the production database or a full archive that also includes generated documents, chat uploads, and licence files.">
+          <div className="admin-delivery-list">
+            <article>
+              <div>
+                <strong>Database</strong>
+                <p>{state.settings?.backups?.database_exists ? `${formatBytes(state.settings.backups.database_size)} at ${state.settings.backups.database_path}` : "Database file not found."}</p>
+              </div>
+              <StatusPill label={state.settings?.backups?.database_exists ? "Ready" : "Missing"} tone={state.settings?.backups?.database_exists ? "success" : "warning"} />
+            </article>
+            <article>
+              <div>
+                <strong>Stored files</strong>
+                <p>{state.settings?.backups?.storage_exists ? `${state.settings.backups.storage_file_count || 0} file(s), ${formatBytes(state.settings.backups.storage_total_size)} at ${state.settings.backups.storage_root}` : "Storage folder not found."}</p>
+              </div>
+              <StatusPill label={state.settings?.backups?.storage_exists ? "Ready" : "Missing"} tone={state.settings?.backups?.storage_exists ? "success" : "warning"} />
+            </article>
+            <article>
+              <div>
+                <strong>Latest backup</strong>
+                <p>{state.settings?.backups?.latest_backup ? `${state.settings.backups.latest_backup.filename} / ${formatBytes(state.settings.backups.latest_backup.size)} / ${formatDate(state.settings.backups.latest_backup.created_at)}` : "No backup created yet."}</p>
+              </div>
+              <StatusPill label={state.settings?.backups?.latest_backup ? "Available" : "None"} tone={state.settings?.backups?.latest_backup ? "success" : "warning"} />
+            </article>
+          </div>
+          <div className="admin-settings-actions">
+            <button className="button button--secondary" type="button" disabled={busy} onClick={() => downloadBackup("database")}>
+              {busy ? "Preparing..." : "Download database"}
+            </button>
+            <button className="button button--primary" type="button" disabled={busy} onClick={() => downloadBackup("full")}>
+              {busy ? "Preparing..." : "Download full backup"}
+            </button>
           </div>
         </DataPanel>
         ) : null}

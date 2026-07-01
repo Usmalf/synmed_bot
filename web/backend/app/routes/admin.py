@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from services.paystack import PaystackError
+from services.backups import create_database_backup, create_full_backup_archive, get_backup_status
 from pydantic import BaseModel
 
 from ..deps import require_admin
@@ -393,6 +395,51 @@ def admin_ratings(session: dict = Depends(require_admin)):
 @router.get("/delivery-settings")
 def admin_delivery_settings(session: dict = Depends(require_admin)):
     return get_admin_delivery_settings()
+
+
+@router.get("/backups/status")
+def admin_backup_status(session: dict = Depends(require_admin)):
+    return get_backup_status()
+
+
+@router.post("/backups/database")
+def admin_database_backup(session: dict = Depends(require_admin)):
+    try:
+        backup = create_database_backup()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    record_admin_audit(
+        session["user_id"],
+        "database_backup_created",
+        "backup",
+        backup["filename"],
+        f"Database backup downloaded: {backup['size']} bytes",
+    )
+    return FileResponse(
+        path=backup["path"],
+        media_type="application/octet-stream",
+        filename=backup["filename"],
+    )
+
+
+@router.post("/backups/full")
+def admin_full_backup(session: dict = Depends(require_admin)):
+    try:
+        backup = create_full_backup_archive()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    record_admin_audit(
+        session["user_id"],
+        "full_backup_created",
+        "backup",
+        backup["filename"],
+        f"Full backup downloaded: {backup['size']} bytes",
+    )
+    return FileResponse(
+        path=backup["path"],
+        media_type="application/zip",
+        filename=backup["filename"],
+    )
 
 
 @router.post("/delivery-settings/test")

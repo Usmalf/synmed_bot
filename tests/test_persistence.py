@@ -1,13 +1,15 @@
 import os
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from datetime import datetime, timezone
 
 from database import init_db
 from services.admin_audit import get_recent_admin_actions, log_admin_action
 from services.analytics import get_admin_analytics
-from services.backups import create_database_backup
+from services import storage_service
+from services.backups import create_database_backup, create_full_backup_archive, get_backup_status
 from services.consultation_records import (
     export_consultation_file,
     get_consultation_timeline,
@@ -316,6 +318,36 @@ class TestPersistenceStores(unittest.TestCase):
         self.assertTrue(Path(backup["path"]).exists())
         self.assertTrue(backup["filename"].startswith("synmed_backup_"))
         Path(backup["path"]).unlink(missing_ok=True)
+
+    def test_full_backup_archive_includes_database_and_storage(self):
+        register_patient(
+            telegram_id=8102,
+            name="Full Backup Test",
+            age="41",
+            gender="Female",
+            phone="08010000042",
+            address="Abuja",
+            allergy="None",
+        )
+
+        original_storage_root = storage_service.STORAGE_ROOT
+        try:
+            with tempfile.TemporaryDirectory() as storage_dir:
+                storage_service.STORAGE_ROOT = Path(storage_dir)
+                storage_service.save_bytes("generated_documents/sample.txt", b"sample document")
+
+                backup = create_full_backup_archive()
+                status = get_backup_status()
+
+                self.assertTrue(Path(backup["path"]).exists())
+                self.assertTrue(backup["filename"].startswith("synmed_full_backup_"))
+                self.assertEqual(status["storage_file_count"], 1)
+                with zipfile.ZipFile(backup["path"]) as archive:
+                    self.assertIn("database/synmed.db", archive.namelist())
+                    self.assertIn("storage/generated_documents/sample.txt", archive.namelist())
+                Path(backup["path"]).unlink(missing_ok=True)
+        finally:
+            storage_service.STORAGE_ROOT = original_storage_root
 
     def test_due_followup_reminders_can_be_selected_and_marked(self):
         schedule_follow_up(

@@ -29,6 +29,7 @@ Required environment variables:
 ```text
 DATABASE_PATH=/var/data/synmed.db
 SYNMED_STORAGE_ROOT=/var/data/storage
+SYNMED_BACKUP_ROOT=/var/data/backups
 AUTH_SECRET_KEY=<generate a long random secret>
 AUTH_DEV_OTP_VISIBLE=0
 FRONTEND_BASE_URL=https://your-frontend-domain
@@ -85,5 +86,46 @@ Use the same `BOT_TOKEN`, `ADMIN_IDS`, Paystack, SMTP, and database environment 
 - Use persistent storage for SQLite, or move to a managed database before heavy real usage.
 - `SYNMED_STORAGE_ROOT` controls where generated PDFs, consultation media, and doctor licence uploads are saved.
 - On Render, keep `SYNMED_STORAGE_ROOT` on the persistent disk, for example `/var/data/storage`.
+- `SYNMED_BACKUP_ROOT` controls where generated backup files are staged. On Render, keep it on the persistent disk, for example `/var/data/backups`.
 - Those files can later move to durable object storage by replacing the adapter in `services/storage_service.py`.
 - After deployment, update `BACKEND_CORS_ORIGINS`, `FRONTEND_BASE_URL`, `AUTH_VERIFY_BASE_URL`, and `VITE_API_BASE_URL` with the final live domains.
+
+## Backup and Restore
+
+Admin users can open **Admin > Settings > Backups** to download:
+
+- **Database backup**: a consistent SQLite snapshot of `DATABASE_PATH`.
+- **Full backup**: a ZIP archive containing `database/synmed.db` plus the contents of `SYNMED_STORAGE_ROOT` under `storage/`.
+
+Recommended routine:
+
+1. Download a full backup before any major deployment, database migration, or manual production data change.
+2. Keep a copy outside Render, such as a secured cloud drive controlled by the business.
+3. Confirm the backup file size is not zero and that the ZIP opens locally.
+
+Manual restore on Render:
+
+1. Pause or stop the backend service to avoid writes during restore.
+2. Open the Render shell for the backend service.
+3. Upload or place the full backup ZIP in the shell environment.
+4. Run:
+
+```bash
+mkdir -p /var/data/restore
+unzip synmed_full_backup_YYYYMMDD_HHMMSS.zip -d /var/data/restore
+cp /var/data/restore/database/synmed.db /var/data/synmed.db
+rm -rf /var/data/storage
+mkdir -p /var/data/storage
+cp -a /var/data/restore/storage/. /var/data/storage/
+```
+
+5. Restart the backend service.
+6. Confirm `/health` responds and test admin login, patient documents, doctor licence previews, and chat attachments.
+
+Database-only restore:
+
+```bash
+cp synmed_backup_YYYYMMDD_HHMMSS.db /var/data/synmed.db
+```
+
+Use database-only restore only when stored files are already intact or not needed.

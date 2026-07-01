@@ -290,6 +290,56 @@ export async function fetchAdminDeliverySettings() {
   return body;
 }
 
+export async function fetchAdminBackupStatus() {
+  const response = await fetch(`${API_BASE_URL}/admin/backups/status`, {
+    headers: {
+      ...authHeaders(),
+    },
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body?.detail || `Request failed: ${response.status}`);
+  }
+  return body;
+}
+
+function filenameFromDisposition(disposition, fallback) {
+  const match = /filename="?([^"]+)"?/i.exec(disposition || "");
+  return match?.[1] || fallback;
+}
+
+export async function downloadAdminBackup(kind = "database") {
+  const safeKind = kind === "full" ? "full" : "database";
+  const response = await fetch(`${API_BASE_URL}/admin/backups/${safeKind}`, {
+    method: "POST",
+    headers: {
+      ...authHeaders(),
+    },
+  });
+  if (!response.ok) {
+    let message = `Request failed: ${response.status}`;
+    try {
+      const body = await response.json();
+      message = body?.detail || message;
+    } catch {}
+    throw new Error(message);
+  }
+  const blob = await response.blob();
+  const filename = filenameFromDisposition(
+    response.headers.get("Content-Disposition"),
+    safeKind === "full" ? "synmed_full_backup.zip" : "synmed_backup.db",
+  );
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+  return { filename, size: blob.size };
+}
+
 export async function testAdminDelivery(channel, target) {
   const response = await fetch(`${API_BASE_URL}/admin/delivery-settings/test`, {
     method: "POST",
