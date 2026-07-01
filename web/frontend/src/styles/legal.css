@@ -40,9 +40,14 @@
 }
 
 .legal-hero p,
-.legal-card p {
+.legal-card p,
+.legal-card li {
   color: var(--color-muted);
   margin: 0;
+}
+
+.legal-hero__source {
+  font-size: 0.85rem;
 }
 
 .legal-hero .button {
@@ -58,7 +63,7 @@
 .legal-card {
   border-radius: 18px;
   display: grid;
-  gap: 0.45rem;
+  gap: 0.65rem;
   padding: 1.25rem 1.35rem;
 }
 
@@ -68,6 +73,17 @@
   font-size: 1.35rem;
   line-height: 1.1;
   margin: 0;
+}
+
+.legal-card ul {
+  display: grid;
+  gap: 0.42rem;
+  margin: 0;
+  padding-left: 1.15rem;
+}
+
+.legal-card li {
+  line-height: 1.6;
 }
 
 body[data-background-theme="light"] .legal-hero,
@@ -84,7 +100,8 @@ body[data-background-theme="light"] .legal-card h2 {
 }
 
 body[data-background-theme="light"] .legal-hero p,
-body[data-background-theme="light"] .legal-card p {
+body[data-background-theme="light"] .legal-card p,
+body[data-background-theme="light"] .legal-card li {
   color: #4f6f7a;
 }
 
