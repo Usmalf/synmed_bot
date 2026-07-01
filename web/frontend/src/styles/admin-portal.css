@@ -599,6 +599,21 @@
   font-size: 1rem;
 }
 
+.admin-error-message {
+  max-width: 420px;
+}
+
+.admin-error-message strong,
+.admin-error-message span {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.admin-error-message span {
+  margin-top: 0.25rem;
+}
+
 .admin-alert-list,
 .admin-activity-list,
 .admin-content-list,
@@ -1047,6 +1062,7 @@ body[data-background-theme="light"] .admin-panel__header p {
 }
 
 body[data-background-theme="light"] .admin-metric span,
+body[data-background-theme="light"] .admin-stats span,
 body[data-background-theme="light"] .admin-table th,
 body[data-background-theme="light"] .admin-table td span,
 body[data-background-theme="light"] .admin-pager span,
@@ -1060,6 +1076,7 @@ body[data-background-theme="light"] .admin-content-list article > div > span {
 }
 
 body[data-background-theme="light"] .admin-alert p,
+body[data-background-theme="light"] .admin-stats article,
 body[data-background-theme="light"] .admin-activity-list p,
 body[data-background-theme="light"] .admin-delivery-list p,
 body[data-background-theme="light"] .admin-content-list p,
@@ -1068,6 +1085,16 @@ body[data-background-theme="light"] .admin-dialog p,
 body[data-background-theme="light"] .admin-record-card > header p,
 body[data-background-theme="light"] .admin-doctor-licence p {
   color: #4e6b75;
+}
+
+body[data-background-theme="light"] .admin-stats article {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(20, 75, 88, 0.14);
+}
+
+body[data-background-theme="light"] .admin-stats strong,
+body[data-background-theme="light"] .admin-error-message strong {
+  color: #163741;
 }
 
 body[data-background-theme="light"] .admin-sidebar,

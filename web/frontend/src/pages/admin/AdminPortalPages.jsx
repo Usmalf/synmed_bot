@@ -245,6 +245,12 @@ function formatAction(value = "") {
   return value.split("_").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
 }
 
+function compactText(value, maxLength = 180) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1).trim()}...`;
+}
+
 function RatingStars({ value }) {
   const numeric = Number(value || 0);
   return (
@@ -2240,7 +2246,10 @@ export function AdminErrorsPage() {
                 <td>{formatDate(log.created_at)}</td>
                 <td><strong>{formatAction(log.source || "system")}</strong><span>{log.severity || "error"}</span></td>
                 <td>{log.method || "N/A"}<span>{log.path || "No path"}{log.status_code ? ` / ${log.status_code}` : ""}</span></td>
-                <td><strong>{log.message}</strong>{log.details ? <span>{log.details}</span> : null}</td>
+                <td className="admin-error-message">
+                  <strong title={log.message || ""}>{compactText(log.message, 160)}</strong>
+                  {log.details ? <span title={log.details}>{compactText(log.details, 220)}</span> : null}
+                </td>
                 <td>{log.user_role || "N/A"}<span>{log.user_id || "No user"}</span></td>
               </tr>
             ))}</tbody>
