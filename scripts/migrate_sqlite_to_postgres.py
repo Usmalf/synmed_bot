@@ -83,6 +83,30 @@ AUTO_ID_COLUMNS = {
 }
 
 
+BIGINT_COLUMN_OVERRIDES = {
+    "admin_accounts": ["admin_id"],
+    "admin_alert_states": ["admin_id"],
+    "admin_audit_logs": ["admin_id"],
+    "consultation_messages": ["sender_id"],
+    "consultations": ["patient_telegram_id", "doctor_telegram_id"],
+    "customer_care_accounts": ["created_by_admin_id"],
+    "doctor_profiles": ["telegram_id"],
+    "doctor_ratings": ["doctor_id", "patient_id"],
+    "doctor_reviews": ["doctor_id", "patient_id"],
+    "doctor_runtime_presence": ["doctor_id"],
+    "doctors": ["telegram_id"],
+    "payments": ["telegram_id", "granted_by_admin_id"],
+    "patient_consents": ["telegram_id"],
+    "patients": ["telegram_id"],
+    "pending_doctor_requests": ["telegram_id"],
+    "support_active_chats_runtime": ["user_id", "agent_id"],
+    "support_runtime_presence": ["agent_id"],
+    "support_waiting_runtime": ["user_id"],
+    "waiting_patients_runtime": ["patient_id"],
+    "active_consultations_runtime": ["patient_id", "doctor_id"],
+}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Import SynMed SQLite data into PostgreSQL.")
     parser.add_argument("--sqlite-path", required=True, help="Path to the source SQLite database.")
@@ -140,6 +164,17 @@ def ensure_optional_tables(cursor) -> None:
         )
         """
     )
+
+
+def ensure_bigint_columns(cursor) -> None:
+    for table, columns in BIGINT_COLUMN_OVERRIDES.items():
+        if not postgres_table_exists(cursor, table):
+            continue
+        existing_columns = set(postgres_columns(cursor, table))
+        for column in columns:
+            if column not in existing_columns:
+                continue
+            cursor.execute(f'ALTER TABLE "{table}" ALTER COLUMN "{column}" TYPE BIGINT')
 
 
 def table_counts(sqlite_conn: sqlite3.Connection) -> dict[str, int]:
@@ -251,6 +286,7 @@ def main() -> int:
     with psycopg.connect(args.database_url, row_factory=dict_row) as pg_conn:
         with pg_conn.cursor() as pg_cursor:
             ensure_optional_tables(pg_cursor)
+            ensure_bigint_columns(pg_cursor)
             if target_has_data(pg_cursor):
                 if not args.replace:
                     print(

@@ -32,6 +32,21 @@ AUTO_ID_COLUMNS = {
     "support_ticket_messages": "id",
 }
 
+BIGINT_COLUMNS = {
+    "admin_id",
+    "agent_id",
+    "created_by_admin_id",
+    "doctor_id",
+    "doctor_telegram_id",
+    "granted_by_admin_id",
+    "patient_id",
+    "patient_telegram_id",
+    "recipient_doctor_id",
+    "sender_id",
+    "telegram_id",
+    "user_id",
+}
+
 
 def get_database_url():
     return os.getenv("DATABASE_URL", "").strip()
@@ -59,6 +74,13 @@ class PostgresCursor:
         converted = converted.replace("AUTOINCREMENT", "")
         converted = converted.replace("TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP", "TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP::TEXT)")
         converted = converted.replace("TEXT DEFAULT CURRENT_TIMESTAMP", "TEXT DEFAULT (CURRENT_TIMESTAMP::TEXT)")
+        for column in BIGINT_COLUMNS:
+            converted = re.sub(
+                rf"\b{column}\s+INTEGER\b",
+                f"{column} BIGINT",
+                converted,
+                flags=re.IGNORECASE,
+            )
         converted = converted.replace("?", "%s")
         return converted
 
@@ -157,10 +179,13 @@ def get_table_columns(cursor, table_name: str) -> set[str]:
     return {row["name"] for row in cursor.fetchall()}
 
 
-def _column_definition_for_database(definition: str) -> str:
+def _column_definition_for_database(column_name: str, definition: str) -> str:
     if not is_postgres_enabled():
         return definition
-    return definition.replace("AUTOINCREMENT", "")
+    converted = definition.replace("AUTOINCREMENT", "")
+    if column_name.lower() in BIGINT_COLUMNS:
+        converted = re.sub(r"\bINTEGER\b", "BIGINT", converted, count=1, flags=re.IGNORECASE)
+    return converted
 
 
 def rebuild_feedback_table(cursor, table_name: str, value_column: str):
@@ -211,7 +236,7 @@ def ensure_columns(cursor, table_name: str, column_definitions: dict[str, str]):
     for column_name, definition in column_definitions.items():
         if column_name not in existing:
             cursor.execute(
-                f"ALTER TABLE {table_name} ADD COLUMN {column_name} {_column_definition_for_database(definition)}"
+                f"ALTER TABLE {table_name} ADD COLUMN {column_name} {_column_definition_for_database(column_name, definition)}"
             )
 
 
