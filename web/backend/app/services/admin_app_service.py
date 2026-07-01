@@ -25,7 +25,6 @@ from .settings_service import (
     update_payment_settings,
 )
 from pathlib import Path
-from .support_ai_service import list_support_tickets
 
 
 UTC = timezone.utc
@@ -118,6 +117,8 @@ def _get_admin_alert_states(admin_id: int) -> dict[tuple[str, str], dict]:
 
 
 def get_admin_alerts(admin_id: int | None = None) -> dict:
+    from .support_ai_service import list_support_tickets
+
     summary = get_admin_summary()
     payment_records = list_admin_payments()["payments"]
     backup_status = get_backup_status()
