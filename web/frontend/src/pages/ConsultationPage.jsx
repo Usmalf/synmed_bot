@@ -258,6 +258,7 @@ export default function ConsultationPage() {
   const remoteVideoRef = useRef(null);
   const ringtoneIntervalRef = useRef(null);
   const ringtoneAudioContextRef = useRef(null);
+  const streamConnectedRef = useRef(false);
   const seenCandidateKeysRef = useRef(new Set());
   const attachmentInputRef = useRef(null);
   const messageInputRef = useRef(null);
@@ -422,6 +423,18 @@ export default function ConsultationPage() {
     });
   }
 
+  function isStaleRoomDowngrade(nextStatus, currentStatus = statusResultRef.current) {
+    if (!nextStatus || !currentStatus?.consultation_id) {
+      return false;
+    }
+
+    if (nextStatus.status === "ended") {
+      return false;
+    }
+
+    return !nextStatus.consultation_id && ["queued", "not_started", "idle"].includes(nextStatus.status);
+  }
+
   async function loadStatus(referenceToLoad, options = {}) {
     const { silent = false } = options;
     if (!referenceToLoad.trim()) {
@@ -443,6 +456,9 @@ export default function ConsultationPage() {
 
     try {
       const result = await fetchConsultationStatus(referenceToLoad.trim());
+      if (isStaleRoomDowngrade(result)) {
+        return;
+      }
       setStatusState({
         status: result.submitted ? "success" : "empty",
         message: result.message,
@@ -545,7 +561,11 @@ export default function ConsultationPage() {
       return undefined;
     }
 
+    streamConnectedRef.current = false;
     const source = createConsultationEventSource(reference);
+    source.onopen = () => {
+      streamConnectedRef.current = true;
+    };
     source.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);
@@ -559,6 +579,9 @@ export default function ConsultationPage() {
           feedbackVisibleRef.current &&
           nextStatus?.status !== "ended"
         ) {
+          return;
+        }
+        if (isStaleRoomDowngrade(nextStatus)) {
           return;
         }
         setStatusState({
@@ -587,6 +610,7 @@ export default function ConsultationPage() {
     };
 
     source.onerror = () => {
+      streamConnectedRef.current = false;
       setTranscriptState((current) => ({
         ...current,
         status: current.transcript.length ? current.status : "error",
@@ -596,7 +620,10 @@ export default function ConsultationPage() {
       }));
     };
 
-    return () => source.close();
+    return () => {
+      streamConnectedRef.current = false;
+      source.close();
+    };
   }, [reference]);
 
   useEffect(() => {
@@ -605,11 +632,11 @@ export default function ConsultationPage() {
     }
 
     const intervalId = window.setInterval(() => {
-      if (document.visibilityState === "hidden" || feedbackState.visible) {
+      if (document.visibilityState === "hidden" || feedbackState.visible || streamConnectedRef.current) {
         return;
       }
       loadStatus(reference, { silent: true });
-    }, 3000);
+    }, 10000);
 
     return () => window.clearInterval(intervalId);
   }, [reference, feedbackState.visible]);
