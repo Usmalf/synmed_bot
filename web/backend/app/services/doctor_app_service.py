@@ -21,6 +21,7 @@ from services.consultation_calls import (
 from services.consultation_records import log_consultation_message
 from services.consultation_records import set_consultation_diagnosis
 from services.consultation_records import set_consultation_notes
+from services.operational_errors import log_exception
 from services.patient_records import get_patient_by_identifier
 from synmed_utils.active_chats import (
     end_chat,
@@ -465,9 +466,21 @@ def connect_doctor_to_selected_patient(doctor_id: int, runtime_patient_id: int) 
     ):
         return get_doctor_workspace(doctor_id) | {"message": "That patient is no longer in the waiting queue."}
 
-    registry.remove_patient_from_queue(runtime_patient_id)
     patient_details = {**details, "doctor_channel": "web"}
-    start_chat(runtime_patient_id, doctor_id, patient_details)
+    try:
+        start_chat(runtime_patient_id, doctor_id, patient_details)
+    except Exception as exc:
+        log_exception(
+            exc,
+            source="doctor_connect",
+            user_role="doctor",
+            user_id=str(doctor_id),
+        )
+        return get_doctor_workspace(doctor_id) | {
+            "message": "Unable to connect to this patient right now. Please try again.",
+        }
+
+    registry.remove_patient_from_queue(runtime_patient_id)
     registry.set_doctor_busy(doctor_id, channel="web")
     return get_doctor_workspace(doctor_id) | {"message": "Doctor connected to the selected patient."}
 

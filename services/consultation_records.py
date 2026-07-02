@@ -17,12 +17,22 @@ def start_consultation_record(consultation_id: str, *, patient_record: dict, doc
         cursor = conn.cursor()
         cursor.execute(
             """
-            INSERT OR REPLACE INTO consultations (
+            INSERT INTO consultations (
                 consultation_id, patient_id, doctor_id, status, notes,
                 created_at, closed_at, patient_telegram_id, doctor_telegram_id,
                 payment_reference
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(consultation_id) DO UPDATE SET
+                patient_id = excluded.patient_id,
+                doctor_id = excluded.doctor_id,
+                status = excluded.status,
+                notes = excluded.notes,
+                created_at = excluded.created_at,
+                closed_at = excluded.closed_at,
+                patient_telegram_id = excluded.patient_telegram_id,
+                doctor_telegram_id = excluded.doctor_telegram_id,
+                payment_reference = excluded.payment_reference
             """,
             (
                 consultation_id,
