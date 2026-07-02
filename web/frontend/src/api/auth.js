@@ -522,6 +522,27 @@ export async function verifyPatientRecovery(identifier, otpCode) {
   return body;
 }
 
+export async function setupPatientWebPassword(hospitalNumber, token, password) {
+  const response = await fetch(`${API_BASE_URL}/auth/patient/setup-password`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      hospital_number: hospitalNumber,
+      token,
+      password,
+    }),
+  });
+
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body?.detail || `Request failed: ${response.status}`);
+  }
+
+  return body;
+}
+
 export async function restoreSession() {
   const currentToken = getAuthToken();
   if (!currentToken) {

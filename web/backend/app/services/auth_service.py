@@ -1543,6 +1543,51 @@ def send_patient_email_verification(*, hospital_number: str, email: str) -> dict
     }
 
 
+def send_patient_web_access_setup(*, hospital_number: str, email: str) -> dict:
+    normalized_email = email.strip().lower()
+    patient = get_patient_by_identifier(hospital_number)
+    if not patient:
+        return {"success": False, "message": "Patient record was not found."}
+    if not normalized_email:
+        return {"success": False, "message": "Patient email is required for web access setup."}
+
+    token = _issue_link_token()
+    _store_otp(
+        role="patient_web_setup",
+        identifier=patient["hospital_number"],
+        delivery_target=normalized_email,
+        code=token,
+        ttl_seconds=EMAIL_VERIFY_TTL_SECONDS,
+    )
+    base_url = os.getenv("FRONTEND_BASE_URL", "http://127.0.0.1:5173").strip().rstrip("/")
+    setup_url = f"{base_url}/patient/setup-password?hospital_number={patient['hospital_number']}&token={token}"
+    body = (
+        f"Hello {patient.get('name') or 'Patient'},\n\n"
+        "Your SynMed patient record has been created from Telegram.\n\n"
+        "Use the secure link below to verify your email and create your web password. "
+        "After that, this same email and password will open your SynMed web dashboard.\n\n"
+        f"{setup_url}\n\n"
+        "If you did not request this, please ignore this email."
+    )
+
+    delivered = False
+    try:
+        delivered = send_plain_email(normalized_email, "Set up your SynMed web access", body)
+    except Exception:
+        delivered = False
+
+    return {
+        "success": True,
+        "delivered": delivered,
+        "message": (
+            "Web access setup email sent."
+            if delivered
+            else "Web access setup link generated, but email delivery is not configured correctly yet."
+        ),
+        "setup_url": setup_url if _is_debug_otp_visible() else None,
+    }
+
+
 def verify_patient_email_link(hospital_number: str, token: str) -> dict:
     patient = get_patient_by_identifier(hospital_number)
     if not patient:
@@ -1564,4 +1609,31 @@ def verify_patient_email_link(hospital_number: str, token: str) -> dict:
     return {
         "success": True,
         "message": "Email verified successfully. You can now sign in to SynMed Web.",
+    }
+
+
+def complete_patient_web_access_setup(hospital_number: str, token: str, password: str) -> dict:
+    if len(password.strip()) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters long.")
+    patient = get_patient_by_identifier(hospital_number)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient record was not found.")
+
+    _consume_valid_otp(role="patient_web_setup", identifier=patient["hospital_number"], otp_code=token)
+
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE patients
+            SET password_hash = ?, email_verified_at = COALESCE(email_verified_at, ?), updated_at = ?
+            WHERE patient_id = ?
+            """,
+            (_password_hash(password), _now_iso(), _now_iso(), patient["hospital_number"]),
+        )
+        conn.commit()
+
+    return {
+        "success": True,
+        "message": "Web access is ready. You can now sign in with your email and password.",
     }

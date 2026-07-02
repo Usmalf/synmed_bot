@@ -20,6 +20,7 @@ from ..schemas.auth import (
     OtpVerifyRequest,
     PatientLoginRequest,
     PatientLoginVerifyRequest,
+    PatientPasswordSetupRequest,
     PatientRecoveryRequest,
     PatientRecoveryVerifyRequest,
     SessionResponse,
@@ -29,6 +30,7 @@ from ..schemas.auth import (
 from ..services.auth_service import (
     bootstrap_admin_account,
     build_session_response,
+    complete_patient_web_access_setup,
     get_delivery_status,
     login_admin,
     login_doctor,
@@ -143,6 +145,11 @@ def patient_recovery_request(payload: PatientRecoveryRequest):
 @router.post("/patient/recovery/verify", response_model=GenericSuccessResponse)
 def patient_recovery_verify(payload: PatientRecoveryVerifyRequest):
     return verify_patient_recovery(payload.identifier, payload.otp_code)
+
+
+@router.post("/patient/setup-password", response_model=GenericSuccessResponse)
+def patient_setup_password(payload: PatientPasswordSetupRequest):
+    return complete_patient_web_access_setup(payload.hospital_number, payload.token, payload.password)
 
 
 @router.get("/verify-email", response_class=HTMLResponse)

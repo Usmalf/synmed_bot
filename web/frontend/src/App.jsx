@@ -54,6 +54,7 @@ import PatientRecoveryOtpPage from "./pages/PatientRecoveryOtpPage.jsx";
 import PatientRecoveryPage from "./pages/PatientRecoveryPage.jsx";
 import PatientRegistrationPage from "./pages/PatientRegistrationPage.jsx";
 import PatientReturningPage from "./pages/PatientReturningPage.jsx";
+import PatientSetupPasswordPage from "./pages/PatientSetupPasswordPage.jsx";
 import PatientVerifyEmailPage from "./pages/PatientVerifyEmailPage.jsx";
 import PatientWorkspaceHomePage from "./pages/PatientWorkspaceHomePage.jsx";
 import WebLoginOtpPage from "./pages/WebLoginOtpPage.jsx";
@@ -471,6 +472,7 @@ export default function App() {
           <Route path="followup" element={<PatientFollowUpPage />} />
           <Route path="recover" element={<PatientRecoveryPage />} />
           <Route path="recover/verify" element={<PatientRecoveryOtpPage />} />
+          <Route path="setup-password" element={<PatientSetupPasswordPage />} />
           <Route path="verify-email" element={<PatientVerifyEmailPage />} />
           <Route path="returning" element={<PatientReturningPage />} />
           <Route path="register" element={<PatientRegistrationPage />} />

@@ -30,6 +30,7 @@ from synmed_utils.active_chats import end_chat, is_in_chat, restore_runtime_stat
 from synmed_utils.admin import get_admins
 from synmed_utils.doctor_profiles import doctor_profiles, verified_badge
 from synmed_utils.doctor_ratings import get_average_rating, get_total_ratings
+from web.backend.app.services.auth_service import send_patient_web_access_setup
 
 
 PATIENT_STATE_KEY = "patient_flow_state"
@@ -107,6 +108,26 @@ def _payment_keyboard(authorization_url: str) -> InlineKeyboardMarkup:
 def _payment_expiry_text() -> str:
     expires_at = datetime.now(LAGOS_TZ) + timedelta(hours=24)
     return expires_at.strftime("%I:%M %p on %d %b %Y").lstrip("0")
+
+
+async def _send_web_access_setup_notice(context: ContextTypes.DEFAULT_TYPE, chat_id: int, patient: dict | None):
+    if not patient or not (patient.get("email") or "").strip() or (patient.get("password_hash") or "").strip():
+        return
+    try:
+        result = send_patient_web_access_setup(
+            hospital_number=patient["hospital_number"],
+            email=patient["email"],
+        )
+    except Exception:
+        return
+    if result.get("delivered"):
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=(
+                "I also sent a secure web-access setup link to your email.\n"
+                "Use it to create your SynMed web password. After that, the same email and password will open your patient dashboard on the website."
+            ),
+        )
 
 
 def _appointment_keyboard(appointment_id: str) -> InlineKeyboardMarkup:
@@ -326,6 +347,7 @@ async def handle_payment_callback(update: Update, context: ContextTypes.DEFAULT_
             allergy=context.user_data.get("reg_allergy", ""),
         )
         context.user_data[PATIENT_RECORD_KEY] = patient
+        await _send_web_access_setup_notice(context, query.message.chat_id, patient)
         payment_token = mark_payment_verified(
             payment_context["reference"],
             paystack_status=paystack_status,
@@ -380,6 +402,7 @@ async def handle_payment_callback(update: Update, context: ContextTypes.DEFAULT_
     if payment_context["email"] and payment_context["email"] != (patient.get("email") or ""):
         patient = update_patient_record(patient["hospital_number"], "email", payment_context["email"])
         context.user_data[PATIENT_RECORD_KEY] = patient
+        await _send_web_access_setup_notice(context, query.message.chat_id, patient)
 
     payment_token = mark_payment_verified(
         payment_context["reference"],
@@ -728,6 +751,7 @@ async def handle_patient_intake(update: Update, context: ContextTypes.DEFAULT_TY
                 "Now choose your preferred appointment date.",
                 reply_markup=_build_appointment_date_picker(),
             )
+            await _send_web_access_setup_notice(context, update.effective_chat.id, patient)
             return
         await _start_payment(
             update,
@@ -773,6 +797,10 @@ async def handle_patient_intake(update: Update, context: ContextTypes.DEFAULT_TY
                 "Enter a valid email address to pay now, or enter a valid payment code from a payment made within the last 24 hours."
             )
             return
+        if patient and normalized_text != (patient.get("email") or ""):
+            patient = update_patient_record(patient["hospital_number"], "email", normalized_text)
+            context.user_data[PATIENT_RECORD_KEY] = patient
+        await _send_web_access_setup_notice(context, update.effective_chat.id, patient)
         await _start_payment(
             update,
             context,

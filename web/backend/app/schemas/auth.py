@@ -98,6 +98,12 @@ class PatientRecoveryVerifyRequest(BaseModel):
     otp_code: str
 
 
+class PatientPasswordSetupRequest(BaseModel):
+    hospital_number: str
+    token: str
+    password: str
+
+
 class GenericSuccessResponse(BaseModel):
     success: bool
     message: str
