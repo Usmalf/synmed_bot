@@ -177,6 +177,45 @@ async def submit_consultation_request(reference: str, symptoms: str) -> dict:
             "call": None,
         }
 
+    patient_runtime_id = patient["id"]
+    consultation = get_last_consultation(patient_runtime_id)
+    if (
+        consultation
+        and is_in_chat(patient_runtime_id)
+        and (consultation.get("patient_details") or {}).get("reference") == reference
+    ):
+        doctor_id = consultation["doctor_id"]
+        return {
+            "submitted": True,
+            "message": "Consultation is active.",
+            "status": "connected",
+            "consultation_id": consultation["consultation_id"],
+            "doctor": _doctor_payload(doctor_id),
+            "patient": _patient_payload(patient),
+            "emergency": {
+                "is_emergency": bool(consultation["patient_details"].get("emergency_flag")),
+                "matches": consultation["patient_details"].get("emergency_matches", ""),
+            },
+            "call": _call_payload_for_consultation(consultation["consultation_id"]),
+        }
+
+    if patient_runtime_id in registry.waiting_patients:
+        details = registry.pending_patient_details.get(patient_runtime_id, {})
+        if details.get("reference") == reference:
+            return {
+                "submitted": True,
+                "message": "Consultation request is queued and waiting for an available doctor.",
+                "status": "queued",
+                "consultation_id": None,
+                "doctor": None,
+                "patient": _patient_payload(patient),
+                "emergency": {
+                    "is_emergency": bool(details.get("emergency_flag")),
+                    "matches": details.get("emergency_matches", ""),
+                },
+                "call": None,
+            }
+
     emergency = detect_emergency(symptoms)
     patient_details = {
         "reference": reference,
@@ -195,7 +234,6 @@ async def submit_consultation_request(reference: str, symptoms: str) -> dict:
         "emergency_matches": ", ".join(emergency["matches"]) if emergency["matches"] else "",
     }
 
-    patient_runtime_id = patient["id"]
     registry.remove_patient_from_queue(patient_runtime_id)
     registry.queue_patient(
         patient_runtime_id,

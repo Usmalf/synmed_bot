@@ -2,7 +2,6 @@ import asyncio
 import os
 import json
 
-import synmed_utils.doctor_registry as registry
 from services.paystack import (
     PaystackError,
     build_frontend_callback_url,
@@ -92,8 +91,6 @@ async def initialize_web_payment(payload: dict) -> dict:
 
     patient_identifier = payload.get("patient_id") or ""
     patient = get_patient_by_identifier(patient_identifier) if patient_identifier else None
-    if patient:
-        registry.remove_patient_from_queue(patient["id"])
 
     reference = create_payment_reference()
     metadata = {
@@ -266,8 +263,6 @@ async def verify_web_payment(reference: str) -> dict:
                 email=patient["email"],
             )
         )
-    if patient:
-        registry.remove_patient_from_queue(patient["id"])
     if patient and payment["email"] and payment["email"] != (patient.get("email") or ""):
         patient = update_patient_record(payment_patient_id, "email", payment["email"])
 
