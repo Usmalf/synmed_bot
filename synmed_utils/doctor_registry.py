@@ -27,6 +27,13 @@ def normalize_channel(channel: str | None) -> str:
     return "web" if (channel or "").strip().lower() == "web" else "telegram"
 
 
+def _runtime_id(user_id):
+    try:
+        return int(user_id)
+    except (TypeError, ValueError):
+        return user_id
+
+
 def _parse_iso_datetime(value: str | None):
     if not value:
         return None
@@ -73,16 +80,19 @@ def _rebuild_aggregate_presence():
 
 
 def is_doctor_available(doctor_id: int, channel: str | None = None) -> bool:
+    doctor_id = _runtime_id(doctor_id)
     return doctor_id in available_doctors_by_channel[normalize_channel(channel)]
 
 
 def is_doctor_busy(doctor_id: int, channel: str | None = None) -> bool:
+    doctor_id = _runtime_id(doctor_id)
     if channel is None:
         return doctor_id in busy_doctors
     return doctor_id in busy_doctors_by_channel[normalize_channel(channel)]
 
 
 def set_doctor_available(doctor_id: int, channel: str | None = None):
+    doctor_id = _runtime_id(doctor_id)
     channel_key = normalize_channel(channel)
     busy_doctors_by_channel[channel_key].discard(doctor_id)
     available_doctors_by_channel[channel_key].add(doctor_id)
@@ -91,6 +101,7 @@ def set_doctor_available(doctor_id: int, channel: str | None = None):
 
 
 def set_doctor_busy(doctor_id: int, channel: str | None = None):
+    doctor_id = _runtime_id(doctor_id)
     channel_key = normalize_channel(channel)
     available_doctors_by_channel[channel_key].discard(doctor_id)
     busy_doctors_by_channel[channel_key].add(doctor_id)
@@ -120,6 +131,7 @@ def clear_doctor_runtime_state():
 
 
 def queue_patient(patient_id: int, details: dict):
+    patient_id = _runtime_id(patient_id)
     if patient_id in waiting_patients:
         waiting_patients.remove(patient_id)
 
@@ -137,6 +149,7 @@ def queue_patient(patient_id: int, details: dict):
 
 
 def remove_patient_from_queue(patient_id: int):
+    patient_id = _runtime_id(patient_id)
     if patient_id in waiting_patients:
         waiting_patients.remove(patient_id)
     pending_patient_details.pop(patient_id, None)
@@ -201,6 +214,7 @@ def pop_waiting_patient(channel: str | None = None):
 
 
 def remove_doctor_from_runtime(doctor_id: int, channel: str | None = None):
+    doctor_id = _runtime_id(doctor_id)
     if channel is None:
         available_doctors.discard(doctor_id)
         busy_doctors.discard(doctor_id)
@@ -221,7 +235,7 @@ def remove_doctor_from_runtime(doctor_id: int, channel: str | None = None):
 def restore_runtime_state():
     clear_doctor_runtime_state()
     for row in load_doctor_presence():
-        doctor_id = row["doctor_id"]
+        doctor_id = _runtime_id(row["doctor_id"])
         status_value = row["status"]
         status_map = {}
         if isinstance(status_value, str) and status_value.startswith("{"):
@@ -246,8 +260,9 @@ def restore_runtime_state():
 
     restored_waiting = load_waiting_patients()
     for item in restored_waiting:
-        waiting_patients.append(item["patient_id"])
-        pending_patient_details[item["patient_id"]] = item["details"]
+        patient_id = _runtime_id(item["patient_id"])
+        waiting_patients.append(patient_id)
+        pending_patient_details[patient_id] = item["details"]
     prune_waiting_patients()
 
 

@@ -5,6 +5,13 @@ from database import get_connection
 verified_doctors: set[int] = set()
 
 
+def _doctor_id(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return value
+
+
 def _query_verified_doctor_ids() -> set[int]:
     conn = get_connection()
     cursor = conn.cursor()
@@ -32,6 +39,7 @@ def save_verified():
 
 
 def is_verified(doctor_id: int) -> bool:
+    doctor_id = _doctor_id(doctor_id)
     return doctor_id in _query_verified_doctor_ids()
 
 
@@ -40,6 +48,7 @@ def get_verified_doctor_ids() -> set[int]:
 
 
 def add_verified_doctor(doctor_id: int):
+    doctor_id = _doctor_id(doctor_id)
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
@@ -57,6 +66,7 @@ def add_verified_doctor(doctor_id: int):
 
 
 def remove_verified_doctor(doctor_id: int):
+    doctor_id = _doctor_id(doctor_id)
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(

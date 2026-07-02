@@ -24,11 +24,20 @@ def _now():
     return datetime.now(UTC)
 
 
+def _runtime_id(user_id):
+    try:
+        return int(user_id)
+    except (TypeError, ValueError):
+        return user_id
+
+
 def start_chat(patient_id: int, doctor_id: int, patient_details: dict | None = None):
     """
     Start a chat between patient and doctor.
     This is the single source of truth.
     """
+    patient_id = _runtime_id(patient_id)
+    doctor_id = _runtime_id(doctor_id)
     active_chats[patient_id] = doctor_id
     active_chats[doctor_id] = patient_id
 
@@ -74,14 +83,17 @@ def start_chat(patient_id: int, doctor_id: int, patient_details: dict | None = N
 
 
 def is_in_chat(user_id: int) -> bool:
+    user_id = _runtime_id(user_id)
     return user_id in active_chats
 
 
 def get_partner(user_id: int):
+    user_id = _runtime_id(user_id)
     return active_chats.get(user_id)
 
 
 def end_chat(user_id: int):
+    user_id = _runtime_id(user_id)
     consultation = last_consultation.get(user_id)
     partner_id = active_chats.pop(user_id, None)
 
@@ -103,6 +115,7 @@ def end_chat(user_id: int):
 
 
 def get_last_doctor(patient_id: int):
+    patient_id = _runtime_id(patient_id)
     consultation = last_consultation.get(patient_id)
     if not consultation:
         return None
@@ -110,10 +123,12 @@ def get_last_doctor(patient_id: int):
 
 
 def get_last_consultation(user_id: int):
+    user_id = _runtime_id(user_id)
     return last_consultation.get(user_id)
 
 
 def touch_chat_activity(user_id: int):
+    user_id = _runtime_id(user_id)
     consultation = last_consultation.get(user_id)
     if not consultation:
         return
@@ -152,19 +167,21 @@ def clear_runtime_state():
 def restore_runtime_state():
     clear_runtime_state()
     for item in load_active_consultations():
+        patient_id = _runtime_id(item["patient_id"])
+        doctor_id = _runtime_id(item["doctor_id"])
         consultation = {
             "consultation_id": item["consultation_id"],
-            "doctor_id": item["doctor_id"],
-            "patient_id": item["patient_id"],
+            "doctor_id": doctor_id,
+            "patient_id": patient_id,
             "patient_details": item["patient_details"],
             "started_at": _now(),
         }
-        active_chats[item["patient_id"]] = item["doctor_id"]
-        active_chats[item["doctor_id"]] = item["patient_id"]
-        last_consultation[item["patient_id"]] = consultation
-        last_consultation[item["doctor_id"]] = consultation
-        last_activity[item["patient_id"]] = _now()
-        last_activity[item["doctor_id"]] = _now()
+        active_chats[patient_id] = doctor_id
+        active_chats[doctor_id] = patient_id
+        last_consultation[patient_id] = consultation
+        last_consultation[doctor_id] = consultation
+        last_activity[patient_id] = _now()
+        last_activity[doctor_id] = _now()
 
 
 restore_runtime_state()

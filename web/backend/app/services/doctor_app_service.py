@@ -48,6 +48,13 @@ def _restore_runtime_state():
     restore_active_chat_state()
 
 
+def _runtime_id(user_id):
+    try:
+        return int(user_id)
+    except (TypeError, ValueError):
+        return user_id
+
+
 async def _send_telegram_message(chat_id: int, text: str):
     token = os.getenv("BOT_TOKEN", "").strip()
     if not token:
@@ -83,6 +90,7 @@ async def _send_telegram_document(chat_id: int, *, filename: str, content: bytes
 
 
 def _doctor_payload(doctor_id: int) -> dict:
+    doctor_id = _runtime_id(doctor_id)
     profile = doctor_profiles.get(doctor_id, {})
     return {
         "doctor_id": doctor_id,
@@ -108,6 +116,7 @@ def _doctor_payload(doctor_id: int) -> dict:
 
 
 def _clear_stale_busy_state(doctor_id: int):
+    doctor_id = _runtime_id(doctor_id)
     consultation = get_last_consultation(doctor_id)
     if consultation and is_in_chat(doctor_id):
         return
@@ -142,6 +151,7 @@ def _queue_payload() -> list[dict]:
 
 
 def _active_consultation_payload(doctor_id: int) -> dict | None:
+    doctor_id = _runtime_id(doctor_id)
     if not is_in_chat(doctor_id):
         return None
 
@@ -271,6 +281,7 @@ def _call_payload_for_consultation(consultation_id: str | None) -> dict | None:
 
 
 def _current_consultation_for_doctor(doctor_id: int):
+    doctor_id = _runtime_id(doctor_id)
     _restore_runtime_state()
     consultation = get_last_consultation(doctor_id)
     if not consultation:
@@ -379,6 +390,7 @@ def _email_direct_medical_report(patient_details: dict, document: dict) -> bool:
 
 
 def get_doctor_workspace(doctor_id: int) -> dict:
+    doctor_id = _runtime_id(doctor_id)
     _restore_runtime_state()
     if not is_verified(doctor_id):
         return {
@@ -404,6 +416,7 @@ def get_doctor_workspace(doctor_id: int) -> dict:
 
 
 def update_doctor_presence(doctor_id: int, action: str) -> dict:
+    doctor_id = _runtime_id(doctor_id)
     _restore_runtime_state()
     _clear_stale_busy_state(doctor_id)
     if not is_verified(doctor_id):
@@ -431,6 +444,8 @@ def update_doctor_presence(doctor_id: int, action: str) -> dict:
 
 
 def connect_doctor_to_selected_patient(doctor_id: int, runtime_patient_id: int) -> dict:
+    doctor_id = _runtime_id(doctor_id)
+    runtime_patient_id = _runtime_id(runtime_patient_id)
     _restore_runtime_state()
     _clear_stale_busy_state(doctor_id)
     if not is_verified(doctor_id):
@@ -458,6 +473,7 @@ def connect_doctor_to_selected_patient(doctor_id: int, runtime_patient_id: int) 
 
 
 def get_doctor_transcript(doctor_id: int) -> dict:
+    doctor_id = _runtime_id(doctor_id)
     _restore_runtime_state()
     consultation, _patient_details = _current_consultation_for_doctor(doctor_id)
     if not consultation:
@@ -479,6 +495,7 @@ def get_doctor_transcript(doctor_id: int) -> dict:
 
 
 async def send_doctor_message(doctor_id: int, message_text: str) -> dict:
+    doctor_id = _runtime_id(doctor_id)
     _restore_runtime_state()
     consultation, patient_details = _current_consultation_for_doctor(doctor_id)
     if not consultation:
@@ -515,6 +532,7 @@ async def send_doctor_message(doctor_id: int, message_text: str) -> dict:
 
 
 async def send_doctor_attachment(doctor_id: int, filename: str, content_type: str, data: str) -> dict:
+    doctor_id = _runtime_id(doctor_id)
     _restore_runtime_state()
     consultation, _patient_details = _current_consultation_for_doctor(doctor_id)
     if not consultation:
@@ -547,6 +565,7 @@ async def send_doctor_attachment(doctor_id: int, filename: str, content_type: st
 
 
 def start_doctor_call(doctor_id: int, call_type: str, offer_sdp: dict) -> dict:
+    doctor_id = _runtime_id(doctor_id)
     consultation, _patient_details = _current_consultation_for_doctor(doctor_id)
     if not consultation:
         return {"ok": False, "message": "No active consultation found for this doctor.", "consultation_id": None, "call": None}
@@ -576,6 +595,7 @@ def start_doctor_call(doctor_id: int, call_type: str, offer_sdp: dict) -> dict:
 
 
 def accept_doctor_call(doctor_id: int, answer_sdp: dict) -> dict:
+    doctor_id = _runtime_id(doctor_id)
     consultation, _patient_details = _current_consultation_for_doctor(doctor_id)
     if not consultation:
         return {"ok": False, "message": "No active consultation found for this doctor.", "consultation_id": None, "call": None}
@@ -599,6 +619,7 @@ def accept_doctor_call(doctor_id: int, answer_sdp: dict) -> dict:
 
 
 def reject_doctor_call(doctor_id: int) -> dict:
+    doctor_id = _runtime_id(doctor_id)
     consultation, _patient_details = _current_consultation_for_doctor(doctor_id)
     if not consultation:
         return {"ok": False, "message": "No active consultation found for this doctor.", "consultation_id": None, "call": None}
@@ -624,6 +645,7 @@ def reject_doctor_call(doctor_id: int) -> dict:
 
 
 def add_doctor_call_candidate(doctor_id: int, candidate: dict) -> dict:
+    doctor_id = _runtime_id(doctor_id)
     consultation, _patient_details = _current_consultation_for_doctor(doctor_id)
     if not consultation:
         return {"ok": False, "message": "No active consultation found for this doctor.", "consultation_id": None, "call": None}
@@ -647,6 +669,7 @@ def add_doctor_call_candidate(doctor_id: int, candidate: dict) -> dict:
 
 
 def end_doctor_call_session(doctor_id: int) -> dict:
+    doctor_id = _runtime_id(doctor_id)
     consultation, _patient_details = _current_consultation_for_doctor(doctor_id)
     if not consultation:
         return {"ok": False, "message": "No active consultation found for this doctor.", "consultation_id": None, "call": None}
@@ -668,6 +691,7 @@ def end_doctor_call_session(doctor_id: int) -> dict:
 
 
 async def end_doctor_chat(doctor_id: int) -> dict:
+    doctor_id = _runtime_id(doctor_id)
     _restore_runtime_state()
     consultation, patient_details = _current_consultation_for_doctor(doctor_id)
     if not consultation:
@@ -691,6 +715,7 @@ async def end_doctor_chat(doctor_id: int) -> dict:
 
 
 def get_doctor_account(doctor_id: int) -> dict:
+    doctor_id = _runtime_id(doctor_id)
     _restore_runtime_state()
     if not is_verified(doctor_id):
         return {
@@ -706,6 +731,7 @@ def get_doctor_account(doctor_id: int) -> dict:
 
 
 def update_doctor_account(doctor_id: int, payload: dict) -> dict:
+    doctor_id = _runtime_id(doctor_id)
     if not is_verified(doctor_id):
         return {
             "found": False,
