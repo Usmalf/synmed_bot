@@ -55,3 +55,4 @@ class MedicalReportRequestCreateRequest(BaseModel):
 
 class MedicalReportPaymentInitRequest(BaseModel):
     email: EmailStr | None = None
+    callback_path: str | None = None

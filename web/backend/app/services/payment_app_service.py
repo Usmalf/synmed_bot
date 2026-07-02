@@ -5,6 +5,7 @@ import json
 import synmed_utils.doctor_registry as registry
 from services.paystack import (
     PaystackError,
+    build_frontend_callback_url,
     create_payment_reference,
     get_payment_by_reference,
     get_latest_valid_payment_for_patient,
@@ -128,6 +129,17 @@ async def initialize_web_payment(payload: dict) -> dict:
                 "password_hash": hash_patient_password(registration["password"]),
             }
         )
+    callback_path = (payload.get("callback_path") or "").strip()
+    if not callback_path:
+        callback_path = "/patient/register" if patient_type == "new" else "/patient/consultation"
+    callback_url = build_frontend_callback_url(
+        callback_path,
+        {
+            "payment_reference": reference,
+            "reference": reference,
+            "status": "success",
+        },
+    )
 
     result = await initialize_transaction(
         email=payload["email"],
@@ -136,6 +148,7 @@ async def initialize_web_payment(payload: dict) -> dict:
         reference=reference,
         label=label,
         metadata=metadata,
+        callback_url=callback_url,
     )
 
     return {

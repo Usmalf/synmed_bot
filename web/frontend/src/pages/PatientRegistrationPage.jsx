@@ -134,6 +134,7 @@ export default function PatientRegistrationPage() {
       const result = await initializePayment({
         email: registrationForm.email.trim(),
         patient_type: "new",
+        callback_path: "/patient/register",
         registration_payload: {
           ...registrationForm,
           age: Number(registrationForm.age),

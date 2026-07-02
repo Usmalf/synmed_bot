@@ -164,7 +164,10 @@ export default function PatientMedicalReportRequestPage() {
     });
 
     try {
-      const result = await initializeMedicalReportPayment(requestId, { email: paymentEmail });
+      const result = await initializeMedicalReportPayment(requestId, {
+        email: paymentEmail,
+        callback_path: "/patient/medical-report-request",
+      });
       window.localStorage.setItem(
         PAYMENT_STATE_KEY,
         JSON.stringify({

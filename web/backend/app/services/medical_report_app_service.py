@@ -4,6 +4,7 @@ from uuid import uuid4
 from database import get_connection
 from services.patient_records import get_patient_by_identifier, update_patient_record
 from services.paystack import (
+    build_frontend_callback_url,
     create_payment_reference,
     get_payment_by_reference,
     initialize_transaction,
@@ -238,6 +239,15 @@ async def initialize_medical_report_payment(request_id: str, patient_identifier:
 
     payment_config = _medical_report_payment_config()
     payment_reference = create_payment_reference(prefix="report")
+    callback_url = build_frontend_callback_url(
+        payload.get("callback_path") or "/patient/medical-report-request",
+        {
+            "request_id": request_id,
+            "payment_reference": payment_reference,
+            "reference": payment_reference,
+            "status": "success",
+        },
+    )
     result = await initialize_transaction(
         email=email,
         amount_ngn=payment_config["amount"],
@@ -252,6 +262,7 @@ async def initialize_medical_report_payment(request_id: str, patient_identifier:
             "purpose": "medical_report",
             "medical_report_request_id": request_id,
         },
+        callback_url=callback_url,
     )
 
     with get_connection() as conn:

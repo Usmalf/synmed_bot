@@ -16,6 +16,7 @@ class PaymentInitializeRequest(BaseModel):
     patient_type: Literal["new", "returning"]
     patient_id: str | None = None
     registration_payload: dict | None = None
+    callback_path: str | None = None
 
 
 class PaymentInitializeResponse(BaseModel):

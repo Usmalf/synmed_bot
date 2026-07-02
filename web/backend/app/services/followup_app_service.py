@@ -9,6 +9,7 @@ from services.followups import (
 )
 from services.patient_records import get_patient_by_identifier, update_patient_record
 from services.paystack import (
+    build_frontend_callback_url,
     create_payment_reference,
     get_payment_by_reference,
     initialize_transaction,
@@ -179,6 +180,15 @@ async def initialize_followup_payment(reference: str, patient_identifier: str, p
 
     payment_config = _followup_payment_config()
     payment_reference = create_payment_reference()
+    callback_url = build_frontend_callback_url(
+        payload.get("callback_path") or "/patient/appointments",
+        {
+            "appointment": appointment["appointment_id"],
+            "payment_reference": payment_reference,
+            "reference": payment_reference,
+            "status": "success",
+        },
+    )
     result = await initialize_transaction(
         email=email,
         amount_ngn=payment_config["amount"],
@@ -193,6 +203,7 @@ async def initialize_followup_payment(reference: str, patient_identifier: str, p
             "purpose": "appointment",
             "appointment_id": appointment["appointment_id"],
         },
+        callback_url=callback_url,
     )
 
     return {

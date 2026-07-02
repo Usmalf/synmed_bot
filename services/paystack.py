@@ -1,6 +1,7 @@
 import os
 import json
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode
 from uuid import uuid4
 
 import httpx
@@ -44,6 +45,22 @@ def _headers() -> dict[str, str]:
         "Authorization": f"Bearer {secret_key}",
         "Content-Type": "application/json",
     }
+
+
+def build_frontend_callback_url(path: str, params: dict | None = None) -> str:
+    base_url = os.getenv("FRONTEND_BASE_URL", "").strip().rstrip("/")
+    if not base_url:
+        return ""
+    normalized_path = f"/{(path or '').strip().lstrip('/')}"
+    url = f"{base_url}{normalized_path}"
+    clean_params = {
+        key: value
+        for key, value in (params or {}).items()
+        if value is not None and str(value).strip() != ""
+    }
+    if clean_params:
+        url = f"{url}?{urlencode(clean_params)}"
+    return url
 
 
 def create_payment_reference(prefix: str = "synmed") -> str:
@@ -316,6 +333,7 @@ async def initialize_transaction(
     reference: str,
     label: str,
     metadata: dict | None = None,
+    callback_url: str = "",
 ):
     payload = {
         "email": email,
@@ -324,6 +342,8 @@ async def initialize_transaction(
         "reference": reference,
         "metadata": metadata or {},
     }
+    if callback_url:
+        payload["callback_url"] = callback_url
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.post(
             f"{PAYSTACK_BASE_URL}/transaction/initialize",

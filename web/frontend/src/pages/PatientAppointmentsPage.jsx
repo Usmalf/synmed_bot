@@ -14,6 +14,8 @@ import "../styles/forms.css";
 import "../styles/patient.css";
 import "../styles/patient-portal.css";
 
+const APPOINTMENT_PAYMENT_STATE_KEY = "synmed-appointment-payment";
+
 function createDefaultForm() {
   const now = new Date();
   const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
@@ -96,7 +98,19 @@ export default function PatientAppointmentsPage() {
       }
 
       if (!ignore) {
-        refreshAppointments();
+        await refreshAppointments();
+      }
+
+      const savedPayment = window.localStorage.getItem(APPOINTMENT_PAYMENT_STATE_KEY);
+      if (!ignore && savedPayment) {
+        try {
+          const parsed = JSON.parse(savedPayment);
+          if (parsed?.appointmentReference && parsed?.paymentReference) {
+            await handleVerifyPayment(parsed.appointmentReference, parsed.paymentReference);
+          }
+        } catch {
+          window.localStorage.removeItem(APPOINTMENT_PAYMENT_STATE_KEY);
+        }
       }
     }
 
@@ -166,13 +180,26 @@ export default function PatientAppointmentsPage() {
     try {
       const result = await initializeFollowupPayment(selectedAppointment.short_reference, {
         email: paymentEmail.trim() || undefined,
+        callback_path: "/patient/appointments",
       });
+      if (result.initialized && result.reference) {
+        window.localStorage.setItem(
+          APPOINTMENT_PAYMENT_STATE_KEY,
+          JSON.stringify({
+            appointmentReference: selectedAppointment.short_reference,
+            paymentReference: result.reference,
+          }),
+        );
+      }
       setPaymentState({
         status: result.initialized ? "success" : "error",
         message: result.message,
         result,
       });
       await refreshAppointments();
+      if (result.initialized && result.authorization_url) {
+        window.location.assign(result.authorization_url);
+      }
     } catch (error) {
       setPaymentState({
         status: "error",
@@ -182,22 +209,27 @@ export default function PatientAppointmentsPage() {
     }
   }
 
-  async function handleVerifyPayment() {
-    if (!selectedAppointment || !paymentState.result?.reference) {
+  async function handleVerifyPayment(appointmentReference = "", paymentReference = "") {
+    const targetAppointmentReference = appointmentReference || selectedAppointment?.short_reference || "";
+    const targetPaymentReference = paymentReference || paymentState.result?.reference || "";
+    if (!targetAppointmentReference || !targetPaymentReference) {
       return;
     }
 
     setPaymentState({
       status: "loading",
       message: "Verifying appointment payment...",
-      result: paymentState.result,
+      result: paymentState.result || { reference: targetPaymentReference },
     });
 
     try {
       const result = await verifyFollowupPayment(
-        selectedAppointment.short_reference,
-        paymentState.result.reference,
+        targetAppointmentReference,
+        targetPaymentReference,
       );
+      if (result.verified) {
+        window.localStorage.removeItem(APPOINTMENT_PAYMENT_STATE_KEY);
+      }
       setPaymentState({
         status: result.verified ? "success" : "error",
         message: result.message,
@@ -424,7 +456,7 @@ export default function PatientAppointmentsPage() {
                     Open Paystack Checkout
                   </a>
                 ) : null}
-                <button className="button button--primary" type="button" onClick={handleVerifyPayment}>
+                <button className="button button--primary" type="button" onClick={() => handleVerifyPayment()}>
                   Verify Payment
                 </button>
               </div>

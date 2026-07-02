@@ -48,6 +48,13 @@ export default function PatientReturningPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!flow.returningPayment?.reference) {
+      return;
+    }
+    handleVerifyPayment(flow.returningPayment.reference);
+  }, []);
+
   async function handleLookupSubmit(event) {
     event.preventDefault();
     setLookupState({
@@ -105,6 +112,7 @@ export default function PatientReturningPage() {
         email: returningEmail.trim(),
         patient_type: "returning",
         patient_id: lookupState.patient.hospital_number,
+        callback_path: "/patient/returning",
       });
       setReturningPaymentState({
         status: "success",
@@ -118,6 +126,9 @@ export default function PatientReturningPage() {
         returningPayment: result,
         consultationReference: result.reference || "",
       });
+      if (result.authorization_url) {
+        window.location.assign(result.authorization_url);
+      }
     } catch (error) {
       setReturningPaymentState({
         status: "error",

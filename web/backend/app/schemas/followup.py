@@ -44,6 +44,7 @@ class FollowUpBookingResponse(BaseModel):
 
 class FollowUpPaymentInitializeRequest(BaseModel):
     email: EmailStr | None = None
+    callback_path: str | None = None
 
 
 class FollowUpPaymentInitializeResponse(BaseModel):

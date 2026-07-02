@@ -142,6 +142,7 @@ export default function PatientConsultationRequestPage() {
         email: patientState.patient.email,
         patient_type: "returning",
         patient_id: patientState.patient.hospital_number,
+        callback_path: "/patient/consultation",
       });
       setPaymentState({
         status: "success",
