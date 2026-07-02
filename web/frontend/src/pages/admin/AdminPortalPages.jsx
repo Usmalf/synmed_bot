@@ -263,19 +263,52 @@ function RatingStars({ value }) {
 }
 
 export function AdminOverviewPage() {
-  const [state, setState] = useState({ status: "loading", message: "Loading operations overview...", summary: null, alerts: [], logs: [] });
+  const [state, setState] = useState({
+    status: "loading",
+    message: "Loading operations overview...",
+    summary: null,
+    alerts: [],
+    alertsStatus: "idle",
+    logs: [],
+  });
 
   async function load() {
-    setState((current) => ({ ...current, status: "loading", message: "Refreshing operations overview..." }));
+    setState((current) => ({
+      ...current,
+      status: "loading",
+      message: "Refreshing operations overview...",
+      alertsStatus: "loading",
+    }));
     try {
-      const [summary, alerts, audit] = await Promise.all([
+      const [summary, audit] = await Promise.all([
         fetchAdminSummary(),
-        fetchAdminAlerts(),
         fetchAdminAuditLogs(8),
       ]);
-      setState({ status: "success", message: "", summary, alerts: alerts.alerts || [], logs: audit.logs || [] });
+      setState((current) => ({
+        ...current,
+        status: "success",
+        message: "",
+        summary,
+        logs: audit.logs || [],
+      }));
     } catch (error) {
       setState((current) => ({ ...current, status: "error", message: error.message || "Unable to load admin overview." }));
+      return;
+    }
+
+    try {
+      const alerts = await fetchAdminAlerts();
+      setState((current) => ({
+        ...current,
+        alerts: alerts.alerts || [],
+        alertsStatus: "success",
+      }));
+    } catch {
+      setState((current) => ({
+        ...current,
+        alerts: [],
+        alertsStatus: "error",
+      }));
     }
   }
 
@@ -312,7 +345,9 @@ export function AdminOverviewPage() {
       <div className="admin-two-column">
         <DataPanel title="Operational alerts" subtitle="Items that may need attention now.">
           <div className="admin-alert-list">
-            {state.alerts.length ? state.alerts.map((alert) => (
+            {state.alertsStatus === "loading" ? <EmptyState>Checking operational alerts...</EmptyState> : null}
+            {state.alertsStatus === "error" ? <EmptyState>Operational alerts could not be loaded.</EmptyState> : null}
+            {state.alertsStatus !== "loading" && state.alertsStatus !== "error" && state.alerts.length ? state.alerts.map((alert) => (
               <Link className={`admin-alert admin-alert--${alert.tone}`} key={alert.id} to={alert.href}>
                 <div>
                   <strong>{alert.title}</strong>
@@ -320,7 +355,8 @@ export function AdminOverviewPage() {
                 </div>
                 <span>Review</span>
               </Link>
-            )) : <EmptyState>No current operational alerts.</EmptyState>}
+            )) : null}
+            {state.alertsStatus === "success" && !state.alerts.length ? <EmptyState>No current operational alerts.</EmptyState> : null}
           </div>
         </DataPanel>
 
