@@ -233,8 +233,13 @@ def remove_doctor_from_runtime(doctor_id: int, channel: str | None = None):
 
 
 def restore_runtime_state():
+    restored_presence = load_doctor_presence()
+    restored_waiting = load_waiting_patients()
+    if restored_presence is None or restored_waiting is None:
+        return
+
     clear_doctor_runtime_state()
-    for row in load_doctor_presence():
+    for row in restored_presence:
         doctor_id = _runtime_id(row["doctor_id"])
         status_value = row["status"]
         status_map = {}
@@ -258,7 +263,6 @@ def restore_runtime_state():
                 available_doctors_by_channel[normalized_channel].add(doctor_id)
     _rebuild_aggregate_presence()
 
-    restored_waiting = load_waiting_patients()
     for item in restored_waiting:
         patient_id = _runtime_id(item["patient_id"])
         waiting_patients.append(patient_id)

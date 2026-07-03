@@ -25,6 +25,9 @@ import "../styles/forms.css";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 const INITIAL_ROOM_MESSAGE = "Describe how you're feeling. You may begin typing below.";
 const QUEUED_ROOM_MESSAGE = "Your consultation request is queued. We will open the conversation here once a doctor joins.";
+const QUEUED_PROMPT_TITLE = "Consultation Request Submitted";
+const QUEUED_PROMPT_MESSAGE =
+  "Your symptoms have been received and your consultation is now in the queue. Please remain on this page; a SynMed doctor will join you shortly.";
 const TRANSCRIPT_PENDING_MESSAGE = "Your conversation will appear here once the consultation becomes active.";
 const SKIPPED_FEEDBACK_KEY = "synmed_skipped_feedback_consultations";
 const BACKGROUND_THEME_KEY = "synmed-background-theme";
@@ -298,6 +301,7 @@ export default function ConsultationPage() {
     videoDisabled: false,
   });
   const [callWindowMinimized, setCallWindowMinimized] = useState(false);
+  const [queuedPromptVisible, setQueuedPromptVisible] = useState(false);
   const autoExpandedVideoCallRef = useRef("");
   const [callWindowPosition, setCallWindowPosition] = useState({ x: null, y: null });
   const [callTimerNow, setCallTimerNow] = useState(() => Date.now());
@@ -1430,6 +1434,26 @@ export default function ConsultationPage() {
     statusState.result?.consultation_id && transcriptState.status === "error" ? transcriptState.message : "";
 
   useEffect(() => {
+    if (roomWaitingForDoctor) {
+      setQueuedPromptVisible(true);
+    } else {
+      setQueuedPromptVisible(false);
+    }
+  }, [roomWaitingForDoctor]);
+
+  useEffect(() => {
+    if (!roomWaitingForDoctor) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      setQueuedPromptVisible((current) => !current);
+    }, 60000);
+
+    return () => window.clearTimeout(timer);
+  }, [roomWaitingForDoctor, queuedPromptVisible]);
+
+  useEffect(() => {
     if (
       !shouldAutoFocusChatComposer() ||
       roomWaitingForDoctor ||
@@ -2100,6 +2124,24 @@ export default function ConsultationPage() {
         </div>
       </SectionCard>
       {callOverlay}
+
+      {queuedPromptVisible && roomWaitingForDoctor
+        ? createPortal(
+            <div className="consultation-queue-overlay" aria-live="polite">
+              <div className="consultation-queue-card">
+                <div className="consultation-feedback-card__header">
+                  <span className="consultation-call-stage__mode">Queued</span>
+                </div>
+                <div className="consultation-feedback-card__body">
+                  <h3>{QUEUED_PROMPT_TITLE}</h3>
+                  <p className="consultation-status__message">{QUEUED_PROMPT_MESSAGE}</p>
+                  <BrandedLoader compact label="Waiting for doctor..." />
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
 
       {feedbackState.visible
         ? createPortal(

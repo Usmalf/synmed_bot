@@ -165,8 +165,12 @@ def clear_runtime_state():
 
 
 def restore_runtime_state():
+    restored_consultations = load_active_consultations()
+    if restored_consultations is None:
+        return
+
     clear_runtime_state()
-    for item in load_active_consultations():
+    for item in restored_consultations:
         patient_id = _runtime_id(item["patient_id"])
         doctor_id = _runtime_id(item["doctor_id"])
         consultation = {

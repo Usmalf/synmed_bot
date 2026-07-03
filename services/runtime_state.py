@@ -102,7 +102,7 @@ def load_doctor_presence():
             )
             return cursor.fetchall()
         except Exception:
-            return []
+            return None
 
 
 def save_waiting_patient(*, patient_id: int, queue_position: int, details: dict):
@@ -151,7 +151,7 @@ def load_waiting_patients():
             )
             rows = cursor.fetchall()
         except Exception:
-            rows = []
+            return None
     return [
         {
             "patient_id": row["patient_id"],
@@ -206,7 +206,7 @@ def load_active_consultations():
             )
             rows = cursor.fetchall()
         except Exception:
-            rows = []
+            return None
     return [
         {
             "consultation_id": row["consultation_id"],

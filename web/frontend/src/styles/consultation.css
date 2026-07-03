@@ -289,7 +289,8 @@
   z-index: 4;
 }
 
-.consultation-feedback-overlay {
+.consultation-feedback-overlay,
+.consultation-queue-overlay {
   position: fixed;
   inset: 0;
   display: grid;
@@ -300,7 +301,8 @@
   backdrop-filter: blur(8px);
 }
 
-.consultation-feedback-card {
+.consultation-feedback-card,
+.consultation-queue-card {
   width: min(50vw, 430px);
   min-width: 300px;
   min-height: min(50vh, 430px);
@@ -311,6 +313,24 @@
   box-shadow: 0 24px 54px rgba(0, 0, 0, 0.28);
   display: grid;
   grid-template-rows: auto 1fr;
+}
+
+.consultation-queue-overlay {
+  pointer-events: none;
+  z-index: 64;
+  background: rgba(6, 16, 22, 0.16);
+  backdrop-filter: blur(4px);
+}
+
+.consultation-queue-card {
+  min-height: 260px;
+  text-align: center;
+}
+
+.consultation-queue-card h3 {
+  color: var(--color-ink);
+  font-size: clamp(1.25rem, 2.2vw, 1.65rem);
+  margin: 0;
 }
 
 .consultation-feedback-card__header {
@@ -689,11 +709,13 @@ body[data-background-theme="light"] .consultation-call-stage__copy span {
   color: #4f6874;
 }
 
-body[data-background-theme="light"] .consultation-feedback-overlay {
+body[data-background-theme="light"] .consultation-feedback-overlay,
+body[data-background-theme="light"] .consultation-queue-overlay {
   background: rgba(9, 33, 43, 0.14);
 }
 
-body[data-background-theme="light"] .consultation-feedback-card {
+body[data-background-theme="light"] .consultation-feedback-card,
+body[data-background-theme="light"] .consultation-queue-card {
   background: rgba(255, 255, 255, 0.98);
   border-color: rgba(8, 30, 40, 0.08);
 }
@@ -754,7 +776,8 @@ body[data-background-theme="light"] .consultation-feedback-card {
     background: rgba(255, 255, 255, 0.98);
   }
 
-  .consultation-feedback-card {
+  .consultation-feedback-card,
+  .consultation-queue-card {
     width: min(92vw, 420px);
     min-width: 0;
     min-height: 0;

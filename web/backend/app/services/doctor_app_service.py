@@ -458,6 +458,23 @@ def connect_doctor_to_selected_patient(doctor_id: int, runtime_patient_id: int) 
     if not registry.is_doctor_available(doctor_id, "web"):
         return get_doctor_workspace(doctor_id) | {"message": "Go online before connecting to a queued patient."}
 
+    existing_consultation = get_last_consultation(doctor_id)
+    if (
+        existing_consultation
+        and is_in_chat(doctor_id)
+        and existing_consultation.get("patient_id") == runtime_patient_id
+    ):
+        active_consultation = _active_consultation_payload(doctor_id)
+        return {
+            "found": True,
+            "message": "Doctor connected to the selected patient.",
+            "doctor": _doctor_payload(doctor_id),
+            "queue": _queue_payload(),
+            "active_consultation": active_consultation,
+            "medical_report_requests": list_doctor_medical_report_requests(doctor_id),
+            "call": _call_payload_for_consultation((active_consultation or {}).get("consultation_id")),
+        }
+
     details = registry.pending_patient_details.get(runtime_patient_id)
     if (
         not details
@@ -482,7 +499,16 @@ def connect_doctor_to_selected_patient(doctor_id: int, runtime_patient_id: int) 
 
     registry.remove_patient_from_queue(runtime_patient_id)
     registry.set_doctor_busy(doctor_id, channel="web")
-    return get_doctor_workspace(doctor_id) | {"message": "Doctor connected to the selected patient."}
+    active_consultation = _active_consultation_payload(doctor_id)
+    return {
+        "found": True,
+        "message": "Doctor connected to the selected patient.",
+        "doctor": _doctor_payload(doctor_id),
+        "queue": _queue_payload(),
+        "active_consultation": active_consultation,
+        "medical_report_requests": list_doctor_medical_report_requests(doctor_id),
+        "call": _call_payload_for_consultation((active_consultation or {}).get("consultation_id")),
+    }
 
 
 def get_doctor_transcript(doctor_id: int) -> dict:
