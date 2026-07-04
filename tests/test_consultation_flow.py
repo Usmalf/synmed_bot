@@ -36,7 +36,7 @@ from services.patient_records import get_patient_by_identifier, register_patient
 import synmed_utils.doctor_registry as registry
 from synmed_utils.active_chats import active_chats, end_chat as end_active_chat, last_consultation, start_chat
 from synmed_utils.doctor_profiles import doctor_profiles
-from web.backend.app.services.consultation_app_service import get_consultation_status
+from web.backend.app.services.consultation_app_service import get_consultation_status, submit_consultation_request
 from synmed_utils.support_registry import (
     approved_support_agents,
     available_support_agents,
@@ -321,6 +321,56 @@ class TestConsultationFlow(IsolatedAsyncioTestCase):
         self.assertIn("Headache and fever", doctor_notice)
         self.assertNotIn("parse_mode", context.bot.send_message.await_args_list[0].kwargs)
         self.assertNotIn("parse_mode", context.bot.send_message.await_args_list[1].kwargs)
+
+    async def test_web_doctor_connects_to_queued_patient(self):
+        from web.backend.app.services.doctor_app_service import (
+            connect_doctor_to_selected_patient,
+            update_doctor_presence,
+        )
+
+        patient = register_patient(
+            telegram_id=None,
+            name="Ada",
+            age="29",
+            gender="Female",
+            phone="08012345678",
+            email="ada@example.com",
+            email_verified_at="2026-07-04T00:00:00+00:00",
+            address="Ikeja",
+            allergy="Peanuts",
+            medical_conditions="Asthma",
+        )
+        reference = "synmed-web-connect-test"
+        create_payment_record(
+            reference=reference,
+            telegram_id=0,
+            patient_id=patient["hospital_number"],
+            email=patient["email"],
+            amount=2000,
+            currency="NGN",
+            patient_type="returning",
+            label="Consultation",
+        )
+        mark_payment_verified(reference, paystack_status="success", patient_id=patient["hospital_number"])
+        doctor_id = 202406
+        doctor_profiles[doctor_id] = {
+            "name": "Mensah",
+            "specialty": "General Medicine",
+            "experience": "7",
+            "verified": True,
+        }
+
+        request = await submit_consultation_request(reference, "Headache and fever")
+        presence = update_doctor_presence(doctor_id, "online")
+        result = connect_doctor_to_selected_patient(doctor_id, patient["id"])
+
+        self.assertEqual(request["status"], "queued")
+        self.assertEqual(presence["doctor"]["status"], "available")
+        self.assertTrue(result["found"])
+        self.assertEqual(result["active_consultation"]["patient_runtime_id"], patient["id"])
+        self.assertEqual(result["active_consultation"]["summary"], "Headache and fever")
+        self.assertEqual(active_chats[patient["id"]], doctor_id)
+        self.assertEqual(active_chats[doctor_id], patient["id"])
 
     async def test_end_chat_sends_rating_prompt_and_returns_doctor_online_when_queue_empty(self):
         patient_id = 101

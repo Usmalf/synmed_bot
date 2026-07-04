@@ -21,7 +21,7 @@ from services.consultation_calls import (
 from services.consultation_records import log_consultation_message
 from services.consultation_records import set_consultation_diagnosis
 from services.consultation_records import set_consultation_notes
-from services.operational_errors import log_exception
+from services.operational_errors import log_exception, log_operational_error
 from services.patient_records import get_patient_by_identifier
 from synmed_utils.active_chats import (
     end_chat,
@@ -207,10 +207,28 @@ def _doctor_connect_response(doctor_id: int, active_consultation: dict | None, m
         "found": True,
         "message": message,
         "doctor": _doctor_payload(doctor_id),
-        "queue": _queue_payload(),
+        "queue": [],
         "active_consultation": active_consultation,
-        "medical_report_requests": list_doctor_medical_report_requests(doctor_id),
-        "call": _call_payload_for_consultation((active_consultation or {}).get("consultation_id")),
+        "medical_report_requests": [],
+        "call": None,
+    }
+
+
+def _doctor_connect_blocked_response(doctor_id: int, message: str, details: dict | None = None) -> dict:
+    if details:
+        log_operational_error(
+            source="doctor_connect_blocked",
+            severity="warning",
+            message=message,
+            user_role="doctor",
+            user_id=str(doctor_id),
+            details=details,
+        )
+    workspace = get_doctor_workspace(doctor_id)
+    return {
+        **workspace,
+        "found": False,
+        "message": message,
     }
 
 
@@ -484,7 +502,11 @@ def connect_doctor_to_selected_patient(doctor_id: int, runtime_patient_id: int) 
     _restore_runtime_state()
     _clear_stale_busy_state(doctor_id)
     if not is_verified(doctor_id):
-        return get_doctor_workspace(doctor_id) | {"message": "Doctor is not verified on SynMed."}
+        return _doctor_connect_blocked_response(
+            doctor_id,
+            "Doctor is not verified on SynMed.",
+            {"reason": "doctor_not_verified", "runtime_patient_id": runtime_patient_id},
+        )
 
     existing_consultation = get_last_consultation(doctor_id)
     if (
@@ -496,10 +518,23 @@ def connect_doctor_to_selected_patient(doctor_id: int, runtime_patient_id: int) 
         return _doctor_connect_response(doctor_id, active_consultation, "Doctor connected to the selected patient.")
 
     if registry.is_doctor_busy(doctor_id):
-        return get_doctor_workspace(doctor_id) | {"message": "Finish the current consultation before selecting another patient."}
+        return _doctor_connect_blocked_response(
+            doctor_id,
+            "Finish the current consultation before selecting another patient.",
+            {
+                "reason": "doctor_busy",
+                "runtime_patient_id": runtime_patient_id,
+                "existing_consultation_id": (existing_consultation or {}).get("consultation_id"),
+                "existing_patient_id": (existing_consultation or {}).get("patient_id"),
+            },
+        )
 
     if not registry.is_doctor_available(doctor_id, "web"):
-        return get_doctor_workspace(doctor_id) | {"message": "Go online before connecting to a queued patient."}
+        return _doctor_connect_blocked_response(
+            doctor_id,
+            "Go online before connecting to a queued patient.",
+            {"reason": "doctor_not_available", "runtime_patient_id": runtime_patient_id},
+        )
 
     details = registry.pending_patient_details.get(runtime_patient_id)
     if (
@@ -507,7 +542,18 @@ def connect_doctor_to_selected_patient(doctor_id: int, runtime_patient_id: int) 
         or runtime_patient_id not in registry.waiting_patients
         or registry.normalize_channel(details.get("source")) != "web"
     ):
-        return get_doctor_workspace(doctor_id) | {"message": "That patient is no longer in the waiting queue."}
+        return _doctor_connect_blocked_response(
+            doctor_id,
+            "That patient is no longer in the waiting queue.",
+            {
+                "reason": "patient_not_waiting",
+                "runtime_patient_id": runtime_patient_id,
+                "queue_ids": list(registry.waiting_patients),
+                "has_details": bool(details),
+                "source": (details or {}).get("source"),
+                "reference": (details or {}).get("reference"),
+            },
+        )
 
     patient_details = {**details, "doctor_channel": "web"}
     try:
@@ -519,9 +565,15 @@ def connect_doctor_to_selected_patient(doctor_id: int, runtime_patient_id: int) 
             user_role="doctor",
             user_id=str(doctor_id),
         )
-        return get_doctor_workspace(doctor_id) | {
-            "message": "Unable to connect to this patient right now. Please try again.",
-        }
+        return _doctor_connect_blocked_response(
+            doctor_id,
+            "Unable to connect to this patient right now. Please try again.",
+            {
+                "reason": "start_chat_exception",
+                "runtime_patient_id": runtime_patient_id,
+                "exception": f"{exc.__class__.__name__}: {exc}",
+            },
+        )
 
     registry.remove_patient_from_queue(runtime_patient_id)
     registry.set_doctor_busy(doctor_id, channel="web")

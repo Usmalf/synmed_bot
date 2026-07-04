@@ -84,6 +84,9 @@ export async function updateDoctorPresence(payload) {
   if (!response.ok) {
     throw new Error(body?.detail || body?.message || `Request failed: ${response.status}`);
   }
+  if (!body?.active_consultation) {
+    throw new Error(body?.message || "Unable to connect to that patient right now.");
+  }
   return body;
 }
 
