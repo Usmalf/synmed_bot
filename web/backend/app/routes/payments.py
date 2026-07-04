@@ -1,4 +1,8 @@
+import os
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import RedirectResponse
 
 from services.paystack import PaystackError
 
@@ -45,3 +49,11 @@ async def verify_payment(reference: str):
         return await verify_web_payment(reference)
     except PaystackError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/telegram-return")
+def telegram_payment_return(reference: str = "", trxref: str = ""):
+    payment_reference = (reference or trxref or "").strip()
+    bot_username = (os.getenv("BOT_USERNAME") or "Synmed2_bot").strip().lstrip("@")
+    payload = quote(f"paid_{payment_reference}", safe="")
+    return RedirectResponse(f"https://t.me/{bot_username}?start={payload}", status_code=302)

@@ -1,4 +1,5 @@
 import os
+import json
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -17,7 +18,9 @@ from services.patient_records import (
 )
 from services.paystack import (
     PaystackError,
+    build_backend_callback_url,
     create_payment_reference,
+    get_payment_by_reference,
     redeem_payment_token,
     initialize_transaction,
     mark_payment_status,
@@ -127,7 +130,35 @@ async def _send_web_access_setup_notice(context: ContextTypes.DEFAULT_TYPE, chat
                 "I also sent a secure web-access setup link to your email.\n"
                 "Use it to create your SynMed web password. After that, the same email and password will open your patient dashboard on the website."
             ),
-        )
+    )
+
+
+def _registration_payload_from_context(context: ContextTypes.DEFAULT_TYPE) -> dict:
+    return {
+        "name": context.user_data.get("reg_name", "N/A"),
+        "age": context.user_data.get("reg_age", "0"),
+        "gender": context.user_data.get("reg_gender", "N/A"),
+        "phone": context.user_data.get("reg_phone", "N/A"),
+        "email": context.user_data.get("reg_email", ""),
+        "address": context.user_data.get("reg_address", "N/A"),
+        "allergy": context.user_data.get("reg_allergy", ""),
+    }
+
+
+def _registration_payload_from_payment(payment: dict) -> dict:
+    try:
+        payload = json.loads(payment.get("registration_payload_json") or "{}")
+    except (TypeError, ValueError):
+        payload = {}
+    return {
+        "name": payload.get("name") or "N/A",
+        "age": payload.get("age") or "0",
+        "gender": payload.get("gender") or "N/A",
+        "phone": payload.get("phone") or "N/A",
+        "email": payload.get("email") or payment.get("email") or "",
+        "address": payload.get("address") or "N/A",
+        "allergy": payload.get("allergy") or "",
+    }
 
 
 def _appointment_keyboard(appointment_id: str) -> InlineKeyboardMarkup:
@@ -441,6 +472,106 @@ async def handle_payment_callback(update: Update, context: ContextTypes.DEFAULT_
             f"This code is valid until {_payment_expiry_text()} for this patient.\n"
             "Now describe your medical history / symptoms."
         ),
+    )
+
+
+async def handle_payment_return_start(update: Update, context: ContextTypes.DEFAULT_TYPE, reference: str):
+    if not update.message:
+        return
+
+    normalized_reference = (reference or "").strip()
+    payment = get_payment_by_reference(normalized_reference)
+    if not payment:
+        await update.message.reply_text(
+            "We could not find that payment reference. Please use Start Consultation again or contact customer care."
+        )
+        return
+
+    if payment["status"] != "verified":
+        await update.message.reply_text("Confirming your payment with Paystack...")
+        try:
+            verification = await verify_transaction(normalized_reference)
+        except PaystackError as exc:
+            await update.message.reply_text(f"Unable to verify payment right now: {exc}")
+            return
+        except Exception:
+            await update.message.reply_text("Unable to verify payment right now. Please try again shortly.")
+            return
+
+        paystack_status = (verification.get("status") or "").lower()
+        amount_ngn = int(verification.get("amount", 0)) // 100
+        currency = verification.get("currency")
+        if paystack_status != "success":
+            mark_payment_status(
+                normalized_reference,
+                status="pending_verification",
+                paystack_status=paystack_status or "pending",
+            )
+            await update.message.reply_text(
+                "Payment is not confirmed yet. If you have just paid, please wait a moment and tap the payment return link again."
+            )
+            return
+
+        if amount_ngn != payment["amount"] or currency != payment["currency"]:
+            mark_payment_status(
+                normalized_reference,
+                status="amount_mismatch",
+                paystack_status=paystack_status,
+            )
+            await update.message.reply_text(
+                "Payment was received but did not match the expected amount or currency. Please contact customer care."
+            )
+            return
+    else:
+        paystack_status = payment.get("paystack_status") or "success"
+
+    patient = None
+    if payment["patient_type"] == "new" and not payment.get("patient_id"):
+        registration_payload = _registration_payload_from_payment(payment)
+        patient = register_patient(
+            telegram_id=update.effective_user.id,
+            name=registration_payload["name"],
+            age=registration_payload["age"],
+            gender=registration_payload["gender"],
+            phone=registration_payload["phone"],
+            email=registration_payload["email"],
+            address=registration_payload["address"],
+            allergy=registration_payload["allergy"],
+        )
+        await _send_web_access_setup_notice(context, update.effective_chat.id, patient)
+    else:
+        patient = get_patient_by_identifier(payment.get("patient_id") or "")
+        if patient and patient.get("telegram_id") in (None, update.effective_user.id):
+            attach_telegram_id(patient["id"], update.effective_user.id)
+            patient = get_patient_by_identifier(patient["hospital_number"])
+
+    if not patient:
+        await update.message.reply_text(
+            "Payment confirmed, but the linked patient record could not be found. Please contact customer care."
+        )
+        return
+
+    payment_token = mark_payment_verified(
+        normalized_reference,
+        paystack_status=paystack_status,
+        patient_id=patient["hospital_number"],
+    )
+    context.user_data[PATIENT_RECORD_KEY] = patient
+    context.user_data[PATIENT_STATE_KEY] = SYMPTOMS
+    _clear_registration_context(context)
+    _clear_payment_context(context)
+    await update.message.reply_text(
+        (
+            "Payment confirmed.\n\n"
+            + (
+                f"Registration completed. Your hospital number is {patient['hospital_number']}.\n"
+                if payment["patient_type"] == "new"
+                else ""
+            )
+            + f"Payment code: {payment_token}\n"
+            f"This code is valid until {_payment_expiry_text()} for this patient.\n\n"
+            "Please describe your medical history or current symptoms."
+        )
     )
 
 
@@ -840,6 +971,15 @@ async def _start_payment(
 
     patient = context.user_data.get(PATIENT_RECORD_KEY)
     reference = create_payment_reference()
+    callback_url = build_backend_callback_url(
+        "/payments/telegram-return",
+        {"reference": reference},
+    )
+    registration_payload_json = (
+        json.dumps(_registration_payload_from_context(context), ensure_ascii=True)
+        if patient_type == "new"
+        else None
+    )
     try:
         payment = await initialize_transaction(
             email=email,
@@ -852,7 +992,9 @@ async def _start_payment(
                 "patient_type": patient_type,
                 "source": "telegram_bot",
                 "patient_id": patient["hospital_number"] if patient else "",
+                "registration_payload_json": registration_payload_json,
             },
+            callback_url=callback_url,
         )
     except PaystackError as exc:
         await message.reply_text(f"Unable to start payment: {exc}")
@@ -879,7 +1021,8 @@ async def _start_payment(
             f"Amount: NGN {amount:,}\n"
             f"Email: {email}\n\n"
             "Tap `Pay Now` to complete payment.\n"
-            "After successful payment, come back here and tap `I Have Paid` to continue."
+            "After successful payment, Paystack should return you here automatically. "
+            "If it does not, come back here and tap `I Have Paid`."
         ),
         reply_markup=_payment_keyboard(payment["authorization_url"]),
     )

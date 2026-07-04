@@ -9,9 +9,15 @@ from services.consent import (
     record_patient_consent,
 )
 from services.interaction_state import reset_interactive_state
+from handlers.patient import handle_payment_return_start
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    start_payload = context.args[0] if getattr(context, "args", None) else ""
+    if start_payload.startswith("paid_"):
+        await handle_payment_return_start(update, context, start_payload.removeprefix("paid_"))
+        return
+
     reset_interactive_state(context.user_data)
     user_id = update.effective_user.id
     if not has_patient_consented(user_id):

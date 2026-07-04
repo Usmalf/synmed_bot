@@ -63,6 +63,26 @@ def build_frontend_callback_url(path: str, params: dict | None = None) -> str:
     return url
 
 
+def build_backend_callback_url(path: str, params: dict | None = None) -> str:
+    base_url = (
+        os.getenv("BACKEND_PUBLIC_URL", "").strip().rstrip("/")
+        or os.getenv("API_BASE_URL", "").strip().rstrip("/")
+        or os.getenv("VITE_API_BASE_URL", "").strip().rstrip("/")
+    )
+    if not base_url:
+        return ""
+    normalized_path = f"/{(path or '').strip().lstrip('/')}"
+    url = f"{base_url}{normalized_path}"
+    clean_params = {
+        key: value
+        for key, value in (params or {}).items()
+        if value is not None and str(value).strip() != ""
+    }
+    if clean_params:
+        url = f"{url}?{urlencode(clean_params)}"
+    return url
+
+
 def create_payment_reference(prefix: str = "synmed") -> str:
     return f"{prefix}-{uuid4().hex[:16]}"
 
