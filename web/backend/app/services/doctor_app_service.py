@@ -180,6 +180,40 @@ def _active_consultation_payload(doctor_id: int) -> dict | None:
     }
 
 
+def _active_consultation_payload_from_consultation(consultation: dict | None) -> dict | None:
+    if not consultation:
+        return None
+    details = consultation.get("patient_details") or {}
+    if details.get("source") != "web":
+        return None
+    return {
+        "consultation_id": consultation["consultation_id"],
+        "patient_runtime_id": consultation["patient_id"],
+        "hospital_number": details.get("hospital_number") or "N/A",
+        "patient_name": details.get("name") or "Unknown patient",
+        "age": details.get("age") or "N/A",
+        "gender": details.get("gender") or "N/A",
+        "allergy": details.get("allergy") or "None recorded",
+        "medical_conditions": details.get("medical_conditions") or "None recorded",
+        "summary": details.get("history") or "No symptoms recorded",
+        "saved_history": details.get("history") or "No symptoms recorded",
+        "source": details.get("source") or "telegram",
+        "emergency": bool(details.get("emergency_flag")),
+    }
+
+
+def _doctor_connect_response(doctor_id: int, active_consultation: dict | None, message: str) -> dict:
+    return {
+        "found": True,
+        "message": message,
+        "doctor": _doctor_payload(doctor_id),
+        "queue": _queue_payload(),
+        "active_consultation": active_consultation,
+        "medical_report_requests": list_doctor_medical_report_requests(doctor_id),
+        "call": _call_payload_for_consultation((active_consultation or {}).get("consultation_id")),
+    }
+
+
 def _doctor_notice_text(patient_details: dict) -> str:
     source_note = (
         "\nThis patient is consulting via SynMed Web. Reply here in the web doctor room and the patient will see your messages there."
@@ -452,28 +486,20 @@ def connect_doctor_to_selected_patient(doctor_id: int, runtime_patient_id: int) 
     if not is_verified(doctor_id):
         return get_doctor_workspace(doctor_id) | {"message": "Doctor is not verified on SynMed."}
 
-    if registry.is_doctor_busy(doctor_id):
-        return get_doctor_workspace(doctor_id) | {"message": "Finish the current consultation before selecting another patient."}
-
-    if not registry.is_doctor_available(doctor_id, "web"):
-        return get_doctor_workspace(doctor_id) | {"message": "Go online before connecting to a queued patient."}
-
     existing_consultation = get_last_consultation(doctor_id)
     if (
         existing_consultation
         and is_in_chat(doctor_id)
         and existing_consultation.get("patient_id") == runtime_patient_id
     ):
-        active_consultation = _active_consultation_payload(doctor_id)
-        return {
-            "found": True,
-            "message": "Doctor connected to the selected patient.",
-            "doctor": _doctor_payload(doctor_id),
-            "queue": _queue_payload(),
-            "active_consultation": active_consultation,
-            "medical_report_requests": list_doctor_medical_report_requests(doctor_id),
-            "call": _call_payload_for_consultation((active_consultation or {}).get("consultation_id")),
-        }
+        active_consultation = _active_consultation_payload_from_consultation(existing_consultation)
+        return _doctor_connect_response(doctor_id, active_consultation, "Doctor connected to the selected patient.")
+
+    if registry.is_doctor_busy(doctor_id):
+        return get_doctor_workspace(doctor_id) | {"message": "Finish the current consultation before selecting another patient."}
+
+    if not registry.is_doctor_available(doctor_id, "web"):
+        return get_doctor_workspace(doctor_id) | {"message": "Go online before connecting to a queued patient."}
 
     details = registry.pending_patient_details.get(runtime_patient_id)
     if (
@@ -485,7 +511,7 @@ def connect_doctor_to_selected_patient(doctor_id: int, runtime_patient_id: int) 
 
     patient_details = {**details, "doctor_channel": "web"}
     try:
-        start_chat(runtime_patient_id, doctor_id, patient_details)
+        consultation_id = start_chat(runtime_patient_id, doctor_id, patient_details)
     except Exception as exc:
         log_exception(
             exc,
@@ -499,16 +525,15 @@ def connect_doctor_to_selected_patient(doctor_id: int, runtime_patient_id: int) 
 
     registry.remove_patient_from_queue(runtime_patient_id)
     registry.set_doctor_busy(doctor_id, channel="web")
-    active_consultation = _active_consultation_payload(doctor_id)
-    return {
-        "found": True,
-        "message": "Doctor connected to the selected patient.",
-        "doctor": _doctor_payload(doctor_id),
-        "queue": _queue_payload(),
-        "active_consultation": active_consultation,
-        "medical_report_requests": list_doctor_medical_report_requests(doctor_id),
-        "call": _call_payload_for_consultation((active_consultation or {}).get("consultation_id")),
-    }
+    active_consultation = _active_consultation_payload_from_consultation(
+        {
+            "consultation_id": consultation_id,
+            "doctor_id": doctor_id,
+            "patient_id": runtime_patient_id,
+            "patient_details": patient_details,
+        }
+    )
+    return _doctor_connect_response(doctor_id, active_consultation, "Doctor connected to the selected patient.")
 
 
 def get_doctor_transcript(doctor_id: int) -> dict:

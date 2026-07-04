@@ -116,10 +116,11 @@ export async function connectDoctorToPatient(runtimePatientId) {
     },
     body: JSON.stringify({ runtime_patient_id: Number(runtimePatientId) }),
   });
+  const body = await response.json();
   if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
+    throw new Error(body?.detail || body?.message || `Request failed: ${response.status}`);
   }
-  return response.json();
+  return body;
 }
 
 export async function fetchDoctorMail() {

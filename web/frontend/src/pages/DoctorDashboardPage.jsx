@@ -395,6 +395,7 @@ export default function DoctorDashboardPage() {
     }
     return window.sessionStorage.getItem(DOCTOR_CONSULTATION_VIEW_KEY) === "true";
   });
+  const connectInFlightRef = useRef(false);
   const [consultationDiagnosis, setConsultationDiagnosis] = useState("");
   const [diagnosisPanelOpen, setDiagnosisPanelOpen] = useState(false);
   const [callUiState, setCallUiState] = useState({
@@ -829,6 +830,13 @@ export default function DoctorDashboardPage() {
     }
 
     try {
+      connectInFlightRef.current = true;
+      setShowConsultationView(true);
+      setTranscriptState({
+        status: "loading",
+        message: "Opening consultation room...",
+        transcript: [],
+      });
       setWorkspaceState((current) => ({
         ...current,
         status: "loading",
@@ -843,14 +851,29 @@ export default function DoctorDashboardPage() {
       window.dispatchEvent(new CustomEvent("synmed:doctor-presence-updated", { detail: result }));
       if (result.active_consultation) {
         setShowConsultationView(true);
-        await loadTranscript();
+        setTranscriptState((current) => ({
+          status: current.transcript?.length ? current.status : "loading",
+          message: "Opening consultation room...",
+          transcript: current.transcript || [],
+        }));
+        loadTranscript();
+      } else {
+        setShowConsultationView(false);
+        setTranscriptState({
+          status: "idle",
+          message: result.message || "The patient could not be connected yet.",
+          transcript: [],
+        });
       }
     } catch (error) {
+      setShowConsultationView(false);
       setWorkspaceState((current) => ({
         ...current,
         status: "error",
         message: error.message || "Unable to connect to that patient right now.",
       }));
+    } finally {
+      connectInFlightRef.current = false;
     }
   }
 
@@ -1430,7 +1453,7 @@ export default function DoctorDashboardPage() {
       : null;
 
   useEffect(() => {
-    if (!activeConsultation?.consultation_id) {
+    if (!activeConsultation?.consultation_id && !connectInFlightRef.current) {
       setShowConsultationView(false);
     }
   }, [activeConsultation?.consultation_id]);
