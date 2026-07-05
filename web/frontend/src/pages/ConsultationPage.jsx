@@ -196,6 +196,30 @@ function getConsultationSenderLabel(senderRole, statusResult) {
   return senderRole || "Participant";
 }
 
+function mergeTranscriptWithPending(serverTranscript = [], currentTranscript = []) {
+  const pending = (currentTranscript || []).filter((item) => item.optimistic);
+  if (!pending.length) {
+    return serverTranscript || [];
+  }
+
+  const serverItems = serverTranscript || [];
+  const unmatchedPending = pending.filter((pendingItem) => {
+    const pendingTime = Date.parse(pendingItem.created_at || "") || Date.now();
+    return !serverItems.some((serverItem) => {
+      if (serverItem.sender_role !== pendingItem.sender_role) return false;
+      if ((serverItem.message_text || "") !== (pendingItem.message_text || "")) return false;
+      const serverTime = Date.parse(serverItem.created_at || "") || pendingTime;
+      return Math.abs(serverTime - pendingTime) < 120000;
+    });
+  });
+
+  return [...serverItems, ...unmatchedPending].sort((left, right) => {
+    const leftTime = Date.parse(left.created_at || "") || 0;
+    const rightTime = Date.parse(right.created_at || "") || 0;
+    return leftTime - rightTime;
+  });
+}
+
 function createPeerConnection() {
   return new RTCPeerConnection({
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -497,11 +521,11 @@ export default function ConsultationPage() {
   async function loadTranscript(referenceToLoad) {
     try {
       const result = await fetchConsultationTranscript(referenceToLoad);
-      setTranscriptState({
+      setTranscriptState((current) => ({
         status: result.found ? "success" : "empty",
         message: result.message,
-        transcript: result.transcript || [],
-      });
+        transcript: mergeTranscriptWithPending(result.transcript || [], current.transcript || []),
+      }));
       if (result.call) {
         setCallState(result.call);
       }
@@ -593,21 +617,23 @@ export default function ConsultationPage() {
           message: nextStatus.message,
           result: nextStatus,
         });
-        setTranscriptState({
+        setTranscriptState((current) => ({
           status: nextTranscript.found ? "success" : hasActiveConsultation ? "empty" : "idle",
           message: nextTranscript.found
             ? nextTranscript.message
             : getRoomMessage(nextStatus, TRANSCRIPT_PENDING_MESSAGE),
-          transcript: nextTranscript.transcript || [],
-        });
-        setDocumentState({
-          status: nextDocuments?.found ? "success" : hasActiveConsultation ? "empty" : "idle",
-          message:
-            nextDocuments?.found || hasActiveConsultation
-              ? nextDocuments?.message || "No consultation documents yet."
-              : "Documents will appear here once the consultation becomes active.",
-          documents: nextDocuments?.documents || [],
-        });
+          transcript: mergeTranscriptWithPending(nextTranscript.transcript || [], current.transcript || []),
+        }));
+        if (nextDocuments) {
+          setDocumentState({
+            status: nextDocuments?.found ? "success" : hasActiveConsultation ? "empty" : "idle",
+            message:
+              nextDocuments?.found || hasActiveConsultation
+                ? nextDocuments?.message || "No consultation documents yet."
+                : "Documents will appear here once the consultation becomes active.",
+            documents: nextDocuments?.documents || [],
+          });
+        }
         setCallState(nextCall || null);
         maybeShowFeedbackFromEndedStatus(nextStatus);
       } catch {}
@@ -1051,6 +1077,7 @@ export default function ConsultationPage() {
       asset_url: null,
       asset_type: null,
       created_at: new Date().toISOString(),
+      optimistic: true,
     };
 
     setDraftMessage("");
@@ -1068,7 +1095,9 @@ export default function ConsultationPage() {
       setTranscriptState((current) => ({
         status: "success",
         message: result.message,
-        transcript: result.transcript?.length ? result.transcript : current.transcript,
+        transcript: result.transcript?.length
+          ? mergeTranscriptWithPending(result.transcript, current.transcript || [])
+          : current.transcript,
       }));
     } catch {
       setTranscriptState((current) => ({

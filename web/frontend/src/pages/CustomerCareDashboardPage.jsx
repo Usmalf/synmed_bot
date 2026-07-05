@@ -128,14 +128,20 @@ export default function CustomerCareDashboardPage() {
   async function load(message = "") {
     setState((current) => ({ ...current, status: "loading", message: message || "Loading customer care desk..." }));
     try {
-      const [desk, accounts, mail] = await Promise.all([
+      const [deskResult, accountsResult, mailResult] = await Promise.allSettled([
         fetchCustomerCareDesk(),
         canManageAccounts ? fetchCustomerCareAccounts() : Promise.resolve({ accounts: [] }),
         fetchCustomerCareMail(),
       ]);
+      const desk = deskResult.status === "fulfilled" ? deskResult.value : {};
+      const accounts = accountsResult.status === "fulfilled" ? accountsResult.value : { accounts: [] };
+      const mail = mailResult.status === "fulfilled" ? mailResult.value : { messages: [], admins: [], customer_care: [] };
+      const loadErrors = [deskResult, accountsResult, mailResult]
+        .filter((result) => result.status === "rejected")
+        .map((result) => result.reason?.message || "A customer-care section could not load.");
       setState({
-        status: "success",
-        message: "",
+        status: loadErrors.length ? "warning" : "success",
+        message: loadErrors.join(" "),
         payments: desk.payments || [],
         consultations: desk.consultations || [],
         accounts: accounts.accounts || [],

@@ -908,12 +908,14 @@ def list_admin_consultations(limit: int = 100) -> list[dict]:
                 c.diagnosis, c.created_at, c.closed_at,
                 COALESCE(p.name, 'Patient') AS patient_name,
                 COALESCE(dp.name, 'Doctor') AS doctor_name,
-                COUNT(cm.id) AS message_count
+                (
+                    SELECT COUNT(*)
+                    FROM consultation_messages cm
+                    WHERE cm.consultation_id = c.consultation_id
+                ) AS message_count
             FROM consultations c
             LEFT JOIN patients p ON p.patient_id = c.patient_id
             LEFT JOIN doctor_profiles dp ON CAST(dp.telegram_id AS TEXT) = c.doctor_id
-            LEFT JOIN consultation_messages cm ON cm.consultation_id = c.consultation_id
-            GROUP BY c.id
             ORDER BY c.created_at DESC
             LIMIT ?
             """,

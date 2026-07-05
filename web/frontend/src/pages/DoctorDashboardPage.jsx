@@ -214,6 +214,30 @@ function getDoctorTranscriptSenderLabel(senderRole, doctorName, patientName) {
   return senderRole || "Participant";
 }
 
+function mergeTranscriptWithPending(serverTranscript = [], currentTranscript = []) {
+  const pending = (currentTranscript || []).filter((item) => item.optimistic);
+  if (!pending.length) {
+    return serverTranscript || [];
+  }
+
+  const serverItems = serverTranscript || [];
+  const unmatchedPending = pending.filter((pendingItem) => {
+    const pendingTime = Date.parse(pendingItem.created_at || "") || Date.now();
+    return !serverItems.some((serverItem) => {
+      if (serverItem.sender_role !== pendingItem.sender_role) return false;
+      if ((serverItem.message_text || "") !== (pendingItem.message_text || "")) return false;
+      const serverTime = Date.parse(serverItem.created_at || "") || pendingTime;
+      return Math.abs(serverTime - pendingTime) < 120000;
+    });
+  });
+
+  return [...serverItems, ...unmatchedPending].sort((left, right) => {
+    const leftTime = Date.parse(left.created_at || "") || 0;
+    const rightTime = Date.parse(right.created_at || "") || 0;
+    return leftTime - rightTime;
+  });
+}
+
 function createPeerConnection() {
   return new RTCPeerConnection({
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -523,11 +547,11 @@ export default function DoctorDashboardPage() {
   async function loadTranscript() {
     try {
       const result = await fetchDoctorTranscript();
-      setTranscriptState({
+      setTranscriptState((current) => ({
         status: result.found ? "success" : "empty",
         message: result.message,
-        transcript: result.transcript || [],
-      });
+        transcript: mergeTranscriptWithPending(result.transcript || [], current.transcript || []),
+      }));
       return result;
     } catch {
       setTranscriptState({
@@ -644,6 +668,7 @@ export default function DoctorDashboardPage() {
       asset_url: null,
       asset_type: null,
       created_at: new Date().toISOString(),
+      optimistic: true,
     };
 
     setDraftMessage("");
@@ -661,7 +686,9 @@ export default function DoctorDashboardPage() {
       setTranscriptState((current) => ({
         status: result.sent ? "success" : "empty",
         message: result.message,
-        transcript: result.transcript?.length ? result.transcript : current.transcript,
+        transcript: result.transcript?.length
+          ? mergeTranscriptWithPending(result.transcript, current.transcript || [])
+          : current.transcript,
       }));
     } catch {
       setTranscriptState((current) => ({
