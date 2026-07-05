@@ -19,7 +19,7 @@ storage_service.ensure_directory("generated_documents")
 storage_service.ensure_directory("consultation_media")
 storage_service.ensure_directory("doctor_application_files")
 
-from .routes import admin, auth, consultations, customer_care, doctors, followups, health, patients, payments  # noqa: E402
+from .routes import admin, auth, consultations, customer_care, doctors, followups, health, patients, payments, whatsapp  # noqa: E402
 from .services.admin_reminder_service import send_due_backup_reminders, send_due_operational_reminders  # noqa: E402
 from .services.doctor_app_service import send_due_license_expiry_reminders  # noqa: E402
 
@@ -70,6 +70,7 @@ app.include_router(payments.router, prefix="/payments", tags=["payments"])
 app.include_router(followups.router, prefix="/followups", tags=["followups"])
 app.include_router(admin.router, prefix="/admin", tags=["admin"])
 app.include_router(customer_care.router, prefix="/customer-care", tags=["customer-care"])
+app.include_router(whatsapp.router, prefix="/whatsapp", tags=["whatsapp"])
 app.mount(
     "/generated-documents",
     StaticFiles(directory=str(storage_service.local_path("generated_documents"))),
