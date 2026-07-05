@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Link } from "react-router-dom";
 import PasswordInput from "../components/PasswordInput.jsx";
 import { initializePayment, verifyPayment } from "../api/payments.js";
@@ -10,6 +10,7 @@ import "../styles/patient.css";
 
 export default function PatientRegistrationPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const flow = loadPatientFlow();
   const [registrationForm, setRegistrationForm] = useState({
     name: "",
@@ -35,6 +36,33 @@ export default function PatientRegistrationPage() {
   });
   const hasPendingPayment =
     paymentState.status === "loading" && Boolean(paymentState.payment && !registrationState.patient);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const callbackReference = (params.get("payment_reference") || params.get("reference") || params.get("trxref") || "").trim();
+    if (!callbackReference || registrationState.patient) {
+      return;
+    }
+
+    setPaymentState((current) => {
+      if (current.payment?.reference === callbackReference && current.status === "loading") {
+        return current;
+      }
+      return {
+        status: "loading",
+        message: "Confirming your registration payment...",
+        payment: {
+          ...(current.payment || {}),
+          reference: callbackReference,
+        },
+      };
+    });
+    savePatientFlow({
+      newPayment: {
+        reference: callbackReference,
+      },
+    });
+  }, [location.search, registrationState.patient]);
 
   useEffect(() => {
     if (!paymentState.payment?.reference || registrationState.patient) {

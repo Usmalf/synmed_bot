@@ -256,13 +256,20 @@ async def verify_web_payment(reference: str) -> dict:
         requires_email_verification = True
         verification_delivery = patient["email"]
         payment_patient_id = patient["hospital_number"]
-        asyncio.create_task(
-            asyncio.to_thread(
+        await asyncio.to_thread(
+            send_patient_email_verification,
+            hospital_number=patient["hospital_number"],
+            email=patient["email"],
+        )
+    elif payment["patient_type"] == "new" and patient and not patient.get("email_verified_at"):
+        requires_email_verification = True
+        verification_delivery = patient.get("email") or payment["email"]
+        if verification_delivery:
+            await asyncio.to_thread(
                 send_patient_email_verification,
                 hospital_number=patient["hospital_number"],
-                email=patient["email"],
+                email=verification_delivery,
             )
-        )
     if patient and payment["email"] and payment["email"] != (patient.get("email") or ""):
         patient = update_patient_record(payment_patient_id, "email", payment["email"])
 
