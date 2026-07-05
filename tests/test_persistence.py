@@ -65,6 +65,15 @@ class TestPersistenceStores(unittest.TestCase):
         self.assertIn("LIKE 'SM%%'", converted)
         self.assertIn("email = %s", converted)
 
+    def test_postgres_sql_conversion_preserves_escaped_wildcards(self):
+        cursor = PostgresCursor(None, None)
+        sql = "SELECT id FROM patients WHERE ? = '%%' OR name LIKE '%' || ? || '%'"
+
+        converted = cursor._convert_sql(sql)
+
+        self.assertIn("%s = '%%'", converted)
+        self.assertIn("name LIKE '%%' || %s || '%%'", converted)
+
     def test_doctor_profile_is_persisted_and_updated(self):
         create_or_update_profile(
             2001,

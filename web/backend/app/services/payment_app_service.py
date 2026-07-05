@@ -114,6 +114,9 @@ async def initialize_web_payment(payload: dict) -> dict:
         missing = [field for field in required_fields if not str(registration.get(field, "")).strip()]
         if missing:
             raise PaystackError("Complete all required registration fields before payment.")
+        normalized_email = registration["email"].strip().lower()
+        if get_patient_by_identifier(normalized_email):
+            raise PaystackError("A patient account already exists with this email. Please sign in or recover your account.")
         metadata["registration_payload_json"] = json.dumps(
             {
                 "name": registration["name"].strip(),
@@ -123,7 +126,7 @@ async def initialize_web_payment(payload: dict) -> dict:
                 "address": registration["address"].strip(),
                 "allergy": (registration.get("allergy") or "").strip(),
                 "medical_conditions": (registration.get("medical_conditions") or "").strip(),
-                "email": registration["email"].strip(),
+                "email": normalized_email,
                 "password_hash": hash_patient_password(registration["password"]),
             }
         )

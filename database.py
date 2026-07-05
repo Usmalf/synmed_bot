@@ -86,9 +86,13 @@ class PostgresCursor:
                 converted,
                 flags=re.IGNORECASE,
             )
-        converted = converted.replace("%", "%%")
+        converted = re.sub(r"(?<!%)%(?![%sbt])", "%%", converted)
         converted = converted.replace("?", "%s")
         return converted
+
+    @property
+    def rowcount(self):
+        return self._cursor.rowcount
 
     def _insert_returning_column(self, sql: str) -> str | None:
         if not sql.lstrip().upper().startswith("INSERT "):

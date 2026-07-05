@@ -1,5 +1,7 @@
 import hmac
 
+from fastapi import HTTPException
+
 from database import get_connection
 from services.consultation_records import get_patient_history_by_identifier
 from services.paystack import get_latest_valid_payment_for_patient
@@ -126,6 +128,13 @@ def lookup_patient(identifier: str) -> dict:
 
 
 def register_web_patient(payload: dict) -> dict:
+    normalized_email = (payload.get("email") or "").strip().lower()
+    if normalized_email and get_patient_by_identifier(normalized_email):
+        raise HTTPException(
+            status_code=409,
+            detail="A patient account already exists with this email. Please sign in or recover your account.",
+        )
+
     patient = register_patient(
         telegram_id=None,
         name=payload["name"].strip(),
@@ -136,7 +145,7 @@ def register_web_patient(payload: dict) -> dict:
         allergy=payload.get("allergy", "").strip(),
         medical_conditions=payload.get("medical_conditions", "").strip(),
         password_hash=hash_patient_password(payload.get("password", "")),
-        email=(payload.get("email") or "").strip(),
+        email=normalized_email,
     )
 
     return {

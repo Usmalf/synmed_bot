@@ -545,6 +545,9 @@ export default function DoctorDashboardPage() {
     }
 
     const intervalId = window.setInterval(() => {
+      if (connectInFlightRef.current) {
+        return;
+      }
       loadWorkspace({ silent: true });
       if (workspaceState.result?.active_consultation) {
         loadTranscript();
