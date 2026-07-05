@@ -851,6 +851,18 @@ async def end_patient_consultation(reference: str) -> dict:
             "doctor": None,
         }
 
+    patient = payload["patient"] if payload else get_patient_by_identifier(payment["patient_id"] or "")
+    if patient and patient["id"] in registry.waiting_patients:
+        details = registry.pending_patient_details.get(patient["id"], {})
+        if details.get("reference") == reference:
+            registry.remove_patient_from_queue(patient["id"])
+            return {
+                "ended": True,
+                "message": "Consultation request cancelled. You have been removed from the waiting queue.",
+                "consultation_id": None,
+                "doctor": None,
+            }
+
     if not payload or not payload["consultation"]:
         return {
             "ended": False,
@@ -859,7 +871,6 @@ async def end_patient_consultation(reference: str) -> dict:
             "doctor": None,
         }
 
-    patient = payload["patient"]
     consultation = payload["consultation"]
     doctor_id = int(consultation["doctor_id"])
 

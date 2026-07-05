@@ -517,7 +517,7 @@ def connect_doctor_to_selected_patient(doctor_id: int, runtime_patient_id: int) 
         active_consultation = _active_consultation_payload_from_consultation(existing_consultation)
         return _doctor_connect_response(doctor_id, active_consultation, "Doctor connected to the selected patient.")
 
-    if registry.is_doctor_busy(doctor_id):
+    if registry.is_doctor_busy(doctor_id, "web"):
         return _doctor_connect_blocked_response(
             doctor_id,
             "Finish the current consultation before selecting another patient.",

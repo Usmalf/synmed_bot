@@ -1247,7 +1247,7 @@ export default function ConsultationPage() {
         doctor: null,
         consultationId: "",
       });
-      if (result.ended) {
+      if (result.ended && result.consultation_id) {
         resetEndedStatusCandidate();
         showFeedbackCard({
           consultation_id: result.consultation_id || "",

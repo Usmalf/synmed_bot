@@ -372,6 +372,86 @@ class TestConsultationFlow(IsolatedAsyncioTestCase):
         self.assertEqual(active_chats[patient["id"]], doctor_id)
         self.assertEqual(active_chats[doctor_id], patient["id"])
 
+    async def test_patient_can_cancel_web_consultation_while_queued(self):
+        from web.backend.app.services.consultation_app_service import end_patient_consultation
+
+        patient = register_patient(
+            telegram_id=101,
+            name="Ada",
+            age="29",
+            gender="Female",
+            phone="08012345678",
+            address="Ikeja",
+            allergy="Peanuts",
+            email="ada@example.com",
+        )
+        reference = "synmed-web-cancel-queued"
+        create_payment_record(
+            reference=reference,
+            telegram_id=0,
+            patient_id=patient["hospital_number"],
+            email=patient["email"],
+            amount=2000,
+            currency="NGN",
+            patient_type="returning",
+            label="Consultation",
+        )
+        mark_payment_verified(reference, paystack_status="success", patient_id=patient["hospital_number"])
+
+        request = await submit_consultation_request(reference, "Headache and fever")
+        result = await end_patient_consultation(reference)
+
+        self.assertEqual(request["status"], "queued")
+        self.assertTrue(result["ended"])
+        self.assertIsNone(result["consultation_id"])
+        self.assertNotIn(patient["id"], registry.waiting_patients)
+        self.assertNotIn(patient["id"], registry.pending_patient_details)
+
+    async def test_web_connect_ignores_non_web_busy_state(self):
+        from web.backend.app.services.doctor_app_service import (
+            connect_doctor_to_selected_patient,
+            update_doctor_presence,
+        )
+
+        patient = register_patient(
+            telegram_id=101,
+            name="Ada",
+            age="29",
+            gender="Female",
+            phone="08012345678",
+            address="Ikeja",
+            allergy="Peanuts",
+            email="ada@example.com",
+        )
+        reference = "synmed-web-connect-channel"
+        create_payment_record(
+            reference=reference,
+            telegram_id=0,
+            patient_id=patient["hospital_number"],
+            email=patient["email"],
+            amount=2000,
+            currency="NGN",
+            patient_type="returning",
+            label="Consultation",
+        )
+        mark_payment_verified(reference, paystack_status="success", patient_id=patient["hospital_number"])
+        doctor_id = 202406
+        doctor_profiles[doctor_id] = {
+            "name": "Mensah",
+            "specialty": "General Medicine",
+            "experience": "7",
+            "verified": True,
+        }
+
+        await submit_consultation_request(reference, "Headache and fever")
+        registry.set_doctor_busy(doctor_id, channel="telegram")
+        update_doctor_presence(doctor_id, "online")
+        result = connect_doctor_to_selected_patient(doctor_id, patient["id"])
+
+        self.assertTrue(result["found"])
+        self.assertEqual(result["active_consultation"]["patient_runtime_id"], patient["id"])
+        self.assertEqual(active_chats[doctor_id], patient["id"])
+
     async def test_end_chat_sends_rating_prompt_and_returns_doctor_online_when_queue_empty(self):
         patient_id = 101
         doctor_id = 202
