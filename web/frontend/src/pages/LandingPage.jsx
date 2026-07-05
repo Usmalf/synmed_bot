@@ -210,6 +210,10 @@ export default function LandingPage() {
             <br />
             Anywhere, Anytime.
           </h1>
+          <p className="landing-hero__body">
+            SynMed Telehealth, also known as SynMed Health or synmedhealth, connects patients in Nigeria with
+            verified doctors for online consultation, prescriptions, investigations, medical reports, and follow-up care.
+          </p>
 
           <div className="landing-hero__actions">
             <Link className="button button--primary" to="/signin">
