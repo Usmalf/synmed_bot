@@ -642,8 +642,8 @@ async def send_doctor_message(doctor_id: int, message_text: str) -> dict:
         "sent": True,
         "message": "Doctor message saved and delivered to the patient channel.",
         "consultation_id": consultation_id,
-        "transcript": _get_transcript_by_consultation_id(consultation_id),
-        "call": _call_payload_for_consultation(consultation_id),
+        "transcript": None,
+        "call": None,
     }
 
 

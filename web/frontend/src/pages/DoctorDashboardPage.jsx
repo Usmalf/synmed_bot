@@ -636,17 +636,33 @@ export default function DoctorDashboardPage() {
       return;
     }
 
+    const messageText = draftMessage.trim();
+    const optimisticMessage = {
+      sender_role: "doctor_web",
+      sender_id: authState.session.user.user_id,
+      message_text: messageText,
+      asset_url: null,
+      asset_type: null,
+      created_at: new Date().toISOString(),
+    };
+
+    setDraftMessage("");
+    setTranscriptState((current) => ({
+      status: "success",
+      message: "Sending message...",
+      transcript: [...(current.transcript || []), optimisticMessage],
+    }));
+
     try {
       const result = await sendDoctorMessage({
         doctor_id: authState.session.user.user_id,
-        message_text: draftMessage.trim(),
+        message_text: messageText,
       });
-      setTranscriptState({
+      setTranscriptState((current) => ({
         status: result.sent ? "success" : "empty",
         message: result.message,
-        transcript: result.transcript || [],
-      });
-      setDraftMessage("");
+        transcript: result.transcript?.length ? result.transcript : current.transcript,
+      }));
     } catch {
       setTranscriptState((current) => ({
         ...current,

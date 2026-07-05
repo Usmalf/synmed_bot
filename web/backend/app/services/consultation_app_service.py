@@ -641,13 +641,12 @@ async def send_patient_message(reference: str, message_text: str) -> dict:
         sender_role="patient_web",
         message_text=message_text.strip(),
     )
-    transcript = get_consultation_transcript(reference)
     return {
         "sent": True,
         "message": "Message saved to the consultation transcript.",
         "consultation_id": consultation_id,
-        "transcript": transcript["transcript"],
-        "call": _call_payload_for_consultation(consultation_id),
+        "transcript": None,
+        "call": None,
     }
 
 

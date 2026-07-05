@@ -1043,17 +1043,33 @@ export default function ConsultationPage() {
       return;
     }
 
+    const messageText = draftMessage.trim();
+    const optimisticMessage = {
+      sender_role: "patient_web",
+      sender_id: statusState.result?.patient?.internal_id || "patient",
+      message_text: messageText,
+      asset_url: null,
+      asset_type: null,
+      created_at: new Date().toISOString(),
+    };
+
+    setDraftMessage("");
+    setTranscriptState((current) => ({
+      status: "success",
+      message: "Sending message...",
+      transcript: [...(current.transcript || []), optimisticMessage],
+    }));
+
     try {
       const result = await sendConsultationMessage({
         reference,
-        message_text: draftMessage.trim(),
+        message_text: messageText,
       });
-      setTranscriptState({
+      setTranscriptState((current) => ({
         status: "success",
         message: result.message,
-        transcript: result.transcript || [],
-      });
-      setDraftMessage("");
+        transcript: result.transcript?.length ? result.transcript : current.transcript,
+      }));
     } catch {
       setTranscriptState((current) => ({
         ...current,
