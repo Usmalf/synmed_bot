@@ -86,6 +86,7 @@ class PostgresCursor:
                 converted,
                 flags=re.IGNORECASE,
             )
+        converted = converted.replace("%", "%%")
         converted = converted.replace("?", "%s")
         return converted
 

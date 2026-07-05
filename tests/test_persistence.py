@@ -5,7 +5,7 @@ import zipfile
 from pathlib import Path
 from datetime import datetime, timezone
 
-from database import init_db
+from database import PostgresCursor, init_db
 from services.admin_audit import get_recent_admin_actions, log_admin_action
 from services.analytics import get_admin_analytics
 from services import storage_service
@@ -55,6 +55,15 @@ class TestPersistenceStores(unittest.TestCase):
             pass
         except PermissionError:
             pass
+
+    def test_postgres_sql_conversion_escapes_literal_percent(self):
+        cursor = PostgresCursor(None, None)
+        sql = "SELECT patient_id FROM patients WHERE patient_id LIKE 'SM%' AND email = ?"
+
+        converted = cursor._convert_sql(sql)
+
+        self.assertIn("LIKE 'SM%%'", converted)
+        self.assertIn("email = %s", converted)
 
     def test_doctor_profile_is_persisted_and_updated(self):
         create_or_update_profile(
