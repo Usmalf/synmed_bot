@@ -4,6 +4,7 @@ import json
 
 from services.paystack import (
     PaystackError,
+    build_backend_callback_url,
     build_frontend_callback_url,
     create_payment_reference,
     get_payment_by_reference,
@@ -129,7 +130,10 @@ async def initialize_web_payment(payload: dict) -> dict:
     callback_path = (payload.get("callback_path") or "").strip()
     if not callback_path:
         callback_path = "/patient/register" if patient_type == "new" else "/patient/consultation"
-    callback_url = build_frontend_callback_url(
+    callback_url = build_backend_callback_url(
+        "/payments/web-return",
+        {"callback_path": callback_path},
+    ) or build_frontend_callback_url(
         callback_path,
         {
             "payment_reference": reference,
@@ -225,6 +229,7 @@ async def verify_web_payment(reference: str) -> dict:
     patient = get_patient_by_identifier(payment_patient_id)
     requires_email_verification = False
     verification_delivery = None
+    verification_email_result = None
     if payment["patient_type"] == "new" and not patient:
         registration_payload_raw = payment["registration_payload_json"] or ""
         if not registration_payload_raw:
@@ -256,7 +261,7 @@ async def verify_web_payment(reference: str) -> dict:
         requires_email_verification = True
         verification_delivery = patient["email"]
         payment_patient_id = patient["hospital_number"]
-        await asyncio.to_thread(
+        verification_email_result = await asyncio.to_thread(
             send_patient_email_verification,
             hospital_number=patient["hospital_number"],
             email=patient["email"],
@@ -265,7 +270,7 @@ async def verify_web_payment(reference: str) -> dict:
         requires_email_verification = True
         verification_delivery = patient.get("email") or payment["email"]
         if verification_delivery:
-            await asyncio.to_thread(
+            verification_email_result = await asyncio.to_thread(
                 send_patient_email_verification,
                 hospital_number=patient["hospital_number"],
                 email=verification_delivery,
@@ -282,7 +287,11 @@ async def verify_web_payment(reference: str) -> dict:
     return {
         "verified": True,
         "message": (
-            "Payment verified, registration completed, and a verification email has been sent. Verify your email before signing in."
+            (
+                "Payment verified and registration completed, but the verification email could not be sent. Please contact SynMed support or try account recovery."
+                if verification_email_result and not verification_email_result.get("delivered")
+                else "Payment verified, registration completed, and a verification email has been sent. Verify your email before signing in."
+            )
             if requires_email_verification
             else "Payment verified. You can now continue to symptoms and consultation."
         ),

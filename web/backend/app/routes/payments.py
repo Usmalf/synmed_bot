@@ -4,7 +4,8 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 
-from services.paystack import PaystackError
+from services.operational_errors import log_exception
+from services.paystack import PaystackError, build_frontend_callback_url
 
 from ..deps import require_patient
 from ..schemas.payment import (
@@ -49,6 +50,54 @@ async def verify_payment(reference: str):
         return await verify_web_payment(reference)
     except PaystackError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/web-return")
+async def web_payment_return(reference: str = "", trxref: str = "", callback_path: str = ""):
+    payment_reference = (reference or trxref or "").strip()
+    frontend_path = (callback_path or "").strip() or "/patient/register"
+    redirect_params = {
+        "payment_reference": payment_reference,
+        "reference": payment_reference,
+    }
+
+    if not payment_reference:
+        redirect_params.update(
+            {
+                "verified": "0",
+                "status": "missing_reference",
+                "message": "Payment reference was not returned by Paystack.",
+            }
+        )
+        return RedirectResponse(build_frontend_callback_url(frontend_path, redirect_params), status_code=302)
+
+    try:
+        result = await verify_web_payment(payment_reference)
+        redirect_params.update(
+            {
+                "verified": "1" if result.get("verified") else "0",
+                "status": result.get("paystack_status") or "pending",
+                "requires_email_verification": "1" if result.get("requires_email_verification") else "0",
+                "message": result.get("message") or "",
+            }
+        )
+    except Exception as exc:
+        log_exception(
+            exc,
+            source="payment_web_return",
+            path="/payments/web-return",
+            method="GET",
+            status_code=502,
+        )
+        redirect_params.update(
+            {
+                "verified": "0",
+                "status": "verification_error",
+                "message": str(exc),
+            }
+        )
+
+    return RedirectResponse(build_frontend_callback_url(frontend_path, redirect_params), status_code=302)
 
 
 @router.get("/telegram-return")

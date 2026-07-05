@@ -34,19 +34,58 @@ export default function PatientRegistrationPage() {
     message: "",
     payment: flow.newPayment,
   });
+  const registrationCompleted =
+    registrationState.status === "success" || paymentState.status === "success";
   const hasPendingPayment =
     paymentState.status === "loading" && Boolean(paymentState.payment && !registrationState.patient);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const callbackReference = (params.get("payment_reference") || params.get("reference") || params.get("trxref") || "").trim();
+    const verified = params.get("verified");
+    const callbackMessage = params.get("message") || "";
     if (!callbackReference || registrationState.patient) {
+      return;
+    }
+
+    if (verified === "1") {
+      const message =
+        callbackMessage ||
+        "Registration payment confirmed. We have sent a verification link to your email. Please verify your email before signing in.";
+      setPaymentState({
+        status: "success",
+        message,
+        payment: { reference: callbackReference, paystack_status: params.get("status") || "success" },
+      });
+      setRegistrationState({
+        status: "success",
+        message,
+        patient: null,
+      });
+      savePatientFlow({
+        newPayment: { reference: callbackReference, paystack_status: params.get("status") || "success" },
+      });
+      window.setTimeout(() => {
+        navigate("/signin", { replace: true });
+      }, 4500);
+      return;
+    }
+
+    if (verified === "0" && params.get("status")) {
+      setPaymentState({
+        status: "error",
+        message: callbackMessage || "Payment could not be verified. Please contact SynMed support with your payment reference.",
+        payment: { reference: callbackReference, paystack_status: params.get("status") || "verification_error" },
+      });
       return;
     }
 
     setPaymentState((current) => {
       if (current.payment?.reference === callbackReference && current.status === "loading") {
-        return current;
+        return {
+          ...current,
+          message: current.message || "Confirming your registration payment...",
+        };
       }
       return {
         status: "loading",
@@ -62,7 +101,7 @@ export default function PatientRegistrationPage() {
         reference: callbackReference,
       },
     });
-  }, [location.search, registrationState.patient]);
+  }, [location.search, navigate, registrationState.patient]);
 
   useEffect(() => {
     if (!paymentState.payment?.reference || registrationState.patient) {
@@ -198,7 +237,7 @@ export default function PatientRegistrationPage() {
         </div>
 
         {hasPendingPayment ? <h2 className="login-page__inline-title">Confirming your registration</h2> : null}
-          {!hasPendingPayment ? (
+          {!hasPendingPayment && !registrationCompleted ? (
             <>
               <form className="form-panel" onSubmit={handleRegistrationSubmit}>
                 <label className="form-field">
@@ -260,15 +299,31 @@ export default function PatientRegistrationPage() {
                 </p>
               </div>
             </>
-          ) : (
+          ) : !registrationCompleted ? (
             <div className="login-page__status-panel">
               <div className={`lookup-result lookup-result--${paymentState.status}`}>
-                <p className="lookup-result__message">Redirecting you securely to payment...</p>
+                <p className="lookup-result__message">
+                  {paymentState.message || "Confirming your registration payment..."}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="login-page__status-panel">
+              <div className="lookup-result lookup-result--success">
+                <p className="lookup-result__message">
+                  {paymentState.message ||
+                    "Registration completed. Please check your email and verify your account before signing in."}
+                </p>
+                <div className="payment-actions">
+                  <Link className="button button--primary" to="/signin">
+                    Go to Sign In
+                  </Link>
+                </div>
               </div>
             </div>
           )}
 
-          {paymentState.status === "error" ? (
+          {paymentState.status === "error" && !registrationCompleted ? (
             <div className={`lookup-result lookup-result--${paymentState.status}`}>
               <p className="lookup-result__message">{paymentState.message}</p>
             </div>

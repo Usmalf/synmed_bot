@@ -1533,7 +1533,8 @@ def send_patient_email_verification(*, hospital_number: str, email: str) -> dict
         delivered = False
 
     return {
-        "success": True,
+        "success": delivered,
+        "delivered": delivered,
         "message": (
             "Verification email sent."
             if delivered
