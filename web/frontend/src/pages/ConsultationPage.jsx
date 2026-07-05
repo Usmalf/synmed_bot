@@ -1081,31 +1081,36 @@ export default function ConsultationPage() {
     };
 
     setDraftMessage("");
+    if (messageInputRef.current) {
+      messageInputRef.current.style.height = "auto";
+      messageInputRef.current.style.overflowY = "hidden";
+    }
     setTranscriptState((current) => ({
       status: "success",
-      message: "Sending message...",
+      message: current.message,
       transcript: [...(current.transcript || []), optimisticMessage],
     }));
 
-    try {
-      const result = await sendConsultationMessage({
+    sendConsultationMessage({
         reference,
         message_text: messageText,
-      });
+      })
+      .then((result) => {
       setTranscriptState((current) => ({
         status: "success",
-        message: result.message,
+        message: current.message,
         transcript: result.transcript?.length
           ? mergeTranscriptWithPending(result.transcript, current.transcript || [])
           : current.transcript,
       }));
-    } catch {
+      })
+      .catch(() => {
       setTranscriptState((current) => ({
         ...current,
         status: "error",
         message: "Unable to send your message right now.",
       }));
-    }
+      });
   }
 
   function handleChatComposerKeyDown(event) {
