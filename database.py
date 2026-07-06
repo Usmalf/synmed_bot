@@ -884,6 +884,25 @@ def init_db():
         },
     )
 
+    for statement in [
+        "CREATE INDEX IF NOT EXISTS idx_consultation_messages_consultation_id_id ON consultation_messages (consultation_id, id)",
+        "CREATE INDEX IF NOT EXISTS idx_consultation_messages_consultation_id_created_at ON consultation_messages (consultation_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_consultations_patient_payment ON consultations (patient_id, payment_reference)",
+        "CREATE INDEX IF NOT EXISTS idx_consultations_payment_reference ON consultations (payment_reference)",
+        "CREATE INDEX IF NOT EXISTS idx_consultations_status_created ON consultations (status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_payments_reference ON payments (reference)",
+        "CREATE INDEX IF NOT EXISTS idx_payments_patient_created ON payments (patient_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_payments_patient_verified ON payments (patient_id, verified_at)",
+        "CREATE INDEX IF NOT EXISTS idx_waiting_patients_runtime_position ON waiting_patients_runtime (queue_position)",
+        "CREATE INDEX IF NOT EXISTS idx_active_consultations_runtime_patient ON active_consultations_runtime (patient_id)",
+        "CREATE INDEX IF NOT EXISTS idx_active_consultations_runtime_doctor ON active_consultations_runtime (doctor_id)",
+        "CREATE INDEX IF NOT EXISTS idx_consultation_calls_runtime_consultation ON consultation_calls_runtime (consultation_id)",
+        "CREATE INDEX IF NOT EXISTS idx_support_ticket_messages_ticket_id_id ON support_ticket_messages (ticket_id, id)",
+        "CREATE INDEX IF NOT EXISTS idx_support_tickets_status_updated ON support_tickets (status, updated_at)",
+        "CREATE INDEX IF NOT EXISTS idx_internal_messages_recipient ON internal_messages (recipient_role, recipient_id, id)",
+    ]:
+        cursor.execute(statement)
+
     conn.commit()
 
     cursor.execute("SELECT COUNT(*) AS total FROM health_tips")
