@@ -23,6 +23,7 @@ from services.consultation_records import set_consultation_diagnosis
 from services.consultation_records import set_consultation_notes
 from services.operational_errors import log_exception, log_operational_error
 from services.patient_records import get_patient_by_identifier
+from .chat_realtime_service import realtime_hub
 from synmed_utils.active_chats import (
     end_chat,
     get_last_consultation,
@@ -625,12 +626,13 @@ async def send_doctor_message(doctor_id: int, message_text: str) -> dict:
     patient_runtime_id = consultation["patient_id"]
     consultation_id = consultation["consultation_id"]
 
-    log_consultation_message(
+    message = log_consultation_message(
         consultation_id,
         sender_id=doctor_id,
         sender_role="doctor_web",
         message_text=message_text.strip(),
     )
+    await realtime_hub.broadcast_message(consultation_id, message)
 
     if patient_details.get("source") != "web":
         try:

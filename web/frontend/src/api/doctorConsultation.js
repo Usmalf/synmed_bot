@@ -43,6 +43,12 @@ export function createDoctorTranscriptEventSource() {
   return new EventSource(`${API_BASE_URL}/doctors/transcript/stream?token=${encodeURIComponent(token)}`);
 }
 
+export function createDoctorTranscriptWebSocket() {
+  const token = getAuthToken();
+  const wsBaseUrl = API_BASE_URL.replace(/^http/i, "ws");
+  return new WebSocket(`${wsBaseUrl}/doctors/transcript/ws?token=${encodeURIComponent(token)}`);
+}
+
 export async function sendDoctorAttachment(file) {
   const response = await fetch(`${API_BASE_URL}/doctors/attachment`, {
     method: "POST",

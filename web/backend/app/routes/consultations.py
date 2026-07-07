@@ -1,6 +1,6 @@
 import asyncio
 
-from fastapi import APIRouter
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
 from ..schemas.consultation import (
@@ -36,6 +36,7 @@ from ..services.consultation_app_service import (
     submit_consultation_feedback,
     submit_consultation_request,
 )
+from ..services.chat_realtime_service import realtime_hub
 
 router = APIRouter()
 
@@ -117,3 +118,19 @@ async def consultation_stream(reference: str):
             await asyncio.sleep(2)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@router.websocket("/ws/{reference}")
+async def consultation_websocket(websocket: WebSocket, reference: str):
+    status = get_consultation_status(reference)
+    consultation_id = status.get("consultation_id")
+    if not consultation_id:
+        await websocket.close(code=1008)
+        return
+
+    await realtime_hub.connect(consultation_id, websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        realtime_hub.disconnect(consultation_id, websocket)

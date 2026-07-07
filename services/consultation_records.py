@@ -569,6 +569,7 @@ def log_consultation_message(
     asset_path: str | None = None,
     asset_type: str | None = None,
 ):
+    created_at = _now_iso()
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -585,10 +586,19 @@ def log_consultation_message(
                 message_text,
                 asset_path,
                 asset_type,
-                _now_iso(),
+                created_at,
             ),
         )
         conn.commit()
+    return {
+        "consultation_id": consultation_id,
+        "sender_id": sender_id,
+        "sender_role": sender_role,
+        "message_text": message_text,
+        "asset_path": asset_path,
+        "asset_type": asset_type,
+        "created_at": created_at,
+    }
 
 
 def export_consultation_file(identifier: str):

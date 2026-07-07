@@ -211,3 +211,8 @@ export async function submitConsultationFeedback(payload) {
 export function createConsultationEventSource(reference) {
   return new EventSource(`${API_BASE_URL}/consultations/stream/${reference}`);
 }
+
+export function createConsultationWebSocket(reference) {
+  const wsBaseUrl = API_BASE_URL.replace(/^http/i, "ws");
+  return new WebSocket(`${wsBaseUrl}/consultations/ws/${encodeURIComponent(reference)}`);
+}

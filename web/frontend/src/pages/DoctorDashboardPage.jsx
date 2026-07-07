@@ -9,6 +9,7 @@ import { createInvestigation, createMedicalReport, createPrescription, saveDocto
 import {
   acceptDoctorCall,
   createDoctorTranscriptEventSource,
+  createDoctorTranscriptWebSocket,
   endDoctorCall,
   endDoctorChat,
   fetchDoctorTranscript,
@@ -216,7 +217,7 @@ function getDoctorTranscriptSenderLabel(senderRole, doctorName, patientName) {
 }
 
 function mergeTranscriptWithPending(serverTranscript = [], currentTranscript = []) {
-  const pending = (currentTranscript || []).filter((item) => item.optimistic);
+  const pending = (currentTranscript || []).filter((item) => item.optimistic || item.realtime);
   if (!pending.length) {
     return serverTranscript || [];
   }
@@ -233,6 +234,40 @@ function mergeTranscriptWithPending(serverTranscript = [], currentTranscript = [
   });
 
   return [...serverItems, ...unmatchedPending].sort((left, right) => {
+    const leftTime = Date.parse(left.created_at || "") || 0;
+    const rightTime = Date.parse(right.created_at || "") || 0;
+    return leftTime - rightTime;
+  });
+}
+
+function mergeRealtimeMessage(currentTranscript = [], message) {
+  const messageTime = Date.parse(message.created_at || "") || Date.now();
+  let replacedPending = false;
+  const nextTranscript = (currentTranscript || []).map((item) => {
+    const itemTime = Date.parse(item.created_at || "") || messageTime;
+    const isMatchingPending =
+      item.optimistic &&
+      item.sender_role === message.sender_role &&
+      (item.message_text || "") === (message.message_text || "") &&
+      Math.abs(itemTime - messageTime) < 120000;
+    if (isMatchingPending) {
+      replacedPending = true;
+      return { ...message, realtime: true };
+    }
+    return item;
+  });
+
+  if (!replacedPending) {
+    const exists = nextTranscript.some(
+      (item) =>
+        item.sender_role === message.sender_role &&
+        (item.message_text || "") === (message.message_text || "") &&
+        item.created_at === message.created_at,
+    );
+    if (!exists) nextTranscript.push({ ...message, realtime: true });
+  }
+
+  return nextTranscript.sort((left, right) => {
     const leftTime = Date.parse(left.created_at || "") || 0;
     const rightTime = Date.parse(right.created_at || "") || 0;
     return leftTime - rightTime;
@@ -629,6 +664,28 @@ export default function DoctorDashboardPage() {
       streamConnectedRef.current = false;
       source.close();
     };
+  }, [authState.session?.user?.user_id, workspaceState.result?.active_consultation?.consultation_id, showConsultationView]);
+
+  useEffect(() => {
+    const consultationId = workspaceState.result?.active_consultation?.consultation_id;
+    if (!authState.session?.user?.user_id || !consultationId || !showConsultationView) {
+      return undefined;
+    }
+
+    const socket = createDoctorTranscriptWebSocket();
+    socket.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.type !== "message" || !payload.message) return;
+        setTranscriptState((current) => ({
+          ...current,
+          status: "success",
+          transcript: mergeRealtimeMessage(current.transcript || [], payload.message),
+        }));
+      } catch {}
+    };
+
+    return () => socket.close();
   }, [authState.session?.user?.user_id, workspaceState.result?.active_consultation?.consultation_id, showConsultationView]);
 
   useEffect(() => {

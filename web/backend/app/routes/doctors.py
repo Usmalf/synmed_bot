@@ -1,7 +1,7 @@
 import asyncio
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
 from ..deps import require_doctor
@@ -51,6 +51,7 @@ from ..services.doctor_app_service import (
     update_doctor_presence,
 )
 from ..services.auth_service import decode_token
+from ..services.chat_realtime_service import realtime_hub
 from ..services.internal_mail_service import (
     list_internal_messages,
     list_message_admins,
@@ -153,6 +154,34 @@ async def doctor_transcript_stream(session: dict = Depends(require_doctor_stream
             await asyncio.sleep(2)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@router.websocket("/transcript/ws")
+async def doctor_transcript_websocket(websocket: WebSocket, token: str = Query(default="")):
+    if not token:
+        await websocket.close(code=1008)
+        return
+    try:
+        session = decode_token(token)
+    except HTTPException:
+        await websocket.close(code=1008)
+        return
+    if session.get("role") != "doctor":
+        await websocket.close(code=1008)
+        return
+
+    transcript = get_doctor_transcript(session["user_id"])
+    consultation_id = transcript.get("consultation_id")
+    if not consultation_id:
+        await websocket.close(code=1008)
+        return
+
+    await realtime_hub.connect(consultation_id, websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        realtime_hub.disconnect(consultation_id, websocket)
 
 
 @router.post("/message", response_model=DoctorMessageResponse)

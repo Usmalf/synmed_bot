@@ -18,6 +18,7 @@ from services import storage_service
 from services.ratings_service import add_rating, add_review, has_rating, has_review
 from services.paystack import get_payment_by_reference, is_payment_within_validity_window
 from services.patient_records import get_patient_by_identifier
+from .chat_realtime_service import realtime_hub
 from synmed_utils.active_chats import (
     end_chat,
     get_last_consultation,
@@ -635,12 +636,13 @@ async def send_patient_message(reference: str, message_text: str) -> dict:
     patient = payload["patient"]
     consultation = payload["consultation"]
     consultation_id = consultation["consultation_id"]
-    log_consultation_message(
+    message = log_consultation_message(
         consultation_id,
         sender_id=patient["id"],
         sender_role="patient_web",
         message_text=message_text.strip(),
     )
+    await realtime_hub.broadcast_message(consultation_id, message)
     return {
         "sent": True,
         "message": "Message saved to the consultation transcript.",
