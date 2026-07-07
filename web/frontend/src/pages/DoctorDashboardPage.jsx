@@ -8,6 +8,7 @@ import { clearAuthToken, clearPendingLogin, restoreSession } from "../api/auth.j
 import { createInvestigation, createMedicalReport, createPrescription, saveDoctorHistory } from "../api/doctorDocuments.js";
 import {
   acceptDoctorCall,
+  createDoctorTranscriptEventSource,
   endDoctorCall,
   endDoctorChat,
   fetchDoctorTranscript,
@@ -351,6 +352,7 @@ export default function DoctorDashboardPage() {
   const voiceStartedAtRef = useRef(0);
   const voiceElapsedBeforePauseRef = useRef(0);
   const composerDockRef = useRef(null);
+  const streamConnectedRef = useRef(false);
   const [authState, setAuthState] = useState({
     status: "loading",
     message: "Checking doctor session...",
@@ -573,7 +575,7 @@ export default function DoctorDashboardPage() {
         return;
       }
       loadWorkspace({ silent: true });
-      if (workspaceState.result?.active_consultation) {
+      if (workspaceState.result?.active_consultation && !streamConnectedRef.current) {
         loadTranscript();
       }
     }, 5000);
@@ -585,6 +587,49 @@ export default function DoctorDashboardPage() {
     workspaceState.result?.active_consultation,
     showConsultationView,
   ]);
+
+  useEffect(() => {
+    const consultationId = workspaceState.result?.active_consultation?.consultation_id;
+    if (!authState.session?.user?.user_id || !consultationId || !showConsultationView) {
+      streamConnectedRef.current = false;
+      return undefined;
+    }
+
+    streamConnectedRef.current = false;
+    const source = createDoctorTranscriptEventSource();
+    source.onopen = () => {
+      streamConnectedRef.current = true;
+    };
+    source.onmessage = (event) => {
+      try {
+        const result = JSON.parse(event.data);
+        setTranscriptState((current) => ({
+          status: result.found ? "success" : "empty",
+          message: result.message,
+          transcript: mergeTranscriptWithPending(result.transcript || [], current.transcript || []),
+        }));
+        setWorkspaceState((current) =>
+          current.result
+            ? {
+                ...current,
+                result: {
+                  ...current.result,
+                  call: result.call || null,
+                },
+              }
+            : current,
+        );
+      } catch {}
+    };
+    source.onerror = () => {
+      streamConnectedRef.current = false;
+    };
+
+    return () => {
+      streamConnectedRef.current = false;
+      source.close();
+    };
+  }, [authState.session?.user?.user_id, workspaceState.result?.active_consultation?.consultation_id, showConsultationView]);
 
   useEffect(() => {
     function handlePresenceUpdate(event) {

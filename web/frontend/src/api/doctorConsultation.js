@@ -1,4 +1,4 @@
-import { authHeaders } from "./auth.js";
+import { authHeaders, getAuthToken } from "./auth.js";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
@@ -36,6 +36,11 @@ export async function sendDoctorMessage(payload) {
     throw new Error(`Request failed: ${response.status}`);
   }
   return response.json();
+}
+
+export function createDoctorTranscriptEventSource() {
+  const token = getAuthToken();
+  return new EventSource(`${API_BASE_URL}/doctors/transcript/stream?token=${encodeURIComponent(token)}`);
 }
 
 export async function sendDoctorAttachment(file) {

@@ -1,4 +1,8 @@
-from fastapi import APIRouter, Depends
+import asyncio
+import json
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 
 from ..deps import require_doctor
 from ..schemas.doctor import (
@@ -46,6 +50,7 @@ from ..services.doctor_app_service import (
     update_doctor_account,
     update_doctor_presence,
 )
+from ..services.auth_service import decode_token
 from ..services.internal_mail_service import (
     list_internal_messages,
     list_message_admins,
@@ -55,6 +60,15 @@ from ..services.internal_mail_service import (
 )
 
 router = APIRouter()
+
+
+def require_doctor_stream_token(token: str = Query(default="")) -> dict:
+    if not token:
+        raise HTTPException(status_code=401, detail="Authorization token is required.")
+    session = decode_token(token)
+    if session.get("role") != "doctor":
+        raise HTTPException(status_code=403, detail="Doctor access is required.")
+    return session
 
 
 @router.get("/mail")
@@ -125,6 +139,20 @@ def doctor_connect(payload: DoctorQueueConnectRequest, session: dict = Depends(r
 @router.get("/transcript", response_model=DoctorTranscriptResponse)
 def doctor_transcript(session: dict = Depends(require_doctor)):
     return get_doctor_transcript(session["user_id"])
+
+
+@router.get("/transcript/stream")
+async def doctor_transcript_stream(session: dict = Depends(require_doctor_stream_token)):
+    async def event_generator():
+        previous_payload = None
+        while True:
+            payload = json.dumps(get_doctor_transcript(session["user_id"]))
+            if payload != previous_payload:
+                yield f"data: {payload}\n\n"
+                previous_payload = payload
+            await asyncio.sleep(2)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @router.post("/message", response_model=DoctorMessageResponse)
