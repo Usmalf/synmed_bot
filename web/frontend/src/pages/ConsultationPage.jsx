@@ -1580,13 +1580,15 @@ export default function ConsultationPage() {
     return left.sortKey.localeCompare(right.sortKey);
   });
 
+  const hasActiveConsultation = Boolean(statusState.result?.consultation_id);
+  const visibleTimelineItems = hasActiveConsultation ? timelineItems : [];
   const roomNeedsInitialSymptoms =
-    !statusState.result?.consultation_id &&
+    !hasActiveConsultation &&
     ["not_started", "missing_payment", "payment_not_verified", "idle"].includes(
       statusState.result?.status || "not_started",
     );
   const roomWaitingForDoctor =
-    !statusState.result?.consultation_id && statusState.result?.status === "queued";
+    !hasActiveConsultation && statusState.result?.status === "queued";
   const roomStatusMessage = roomNeedsInitialSymptoms
     ? INITIAL_ROOM_MESSAGE
     : roomWaitingForDoctor
@@ -1594,10 +1596,10 @@ export default function ConsultationPage() {
       : transcriptState.message;
   const showRoomLoader =
     statusState.status === "loading" &&
-    !statusState.result?.consultation_id &&
+    !hasActiveConsultation &&
     !timelineItems.length;
   const roomMetaMessage =
-    statusState.result?.consultation_id && transcriptState.status === "error" ? transcriptState.message : "";
+    hasActiveConsultation && transcriptState.status === "error" ? transcriptState.message : "";
 
   useEffect(() => {
     if (roomWaitingForDoctor) {
@@ -1967,7 +1969,13 @@ export default function ConsultationPage() {
         title=""
         subtitle=""
       >
-        <div className={`consultation-room consultation-room--${transcriptState.status}`}>
+        <div
+          className={
+            hasActiveConsultation
+              ? `consultation-room consultation-room--${transcriptState.status}`
+              : `consultation-room consultation-room--preactive consultation-room--${statusState.result?.status || "idle"}`
+          }
+        >
           <div className="consultation-floating-theme" aria-label="Theme">
             {BACKGROUND_OPTIONS.map((option) => (
               <button
@@ -1985,7 +1993,7 @@ export default function ConsultationPage() {
             ))}
           </div>
           <div className="consultation-room__workspace">
-            <aside className="consultation-room__sidebar">
+            {hasActiveConsultation ? <aside className="consultation-room__sidebar">
               <div
                 className={
                   consultationDetailsOpen
@@ -2101,10 +2109,10 @@ export default function ConsultationPage() {
                   </div>
                 </details>
               ) : null}
-            </aside>
+            </aside> : null}
 
             <section className="consultation-room__chatpane">
-              <div className="consultation-chat-header">
+              {hasActiveConsultation ? <div className="consultation-chat-header">
                 <button className="consultation-toolbar__back consultation-toolbar__back--inline" type="button" onClick={() => navigate("/patient")}>
                   {"\u2190"} Back
                 </button>
@@ -2112,11 +2120,21 @@ export default function ConsultationPage() {
                   <h2>{statusState.result?.doctor?.name ? formatDoctorDisplayName(statusState.result.doctor.name) : "Waiting for doctor"}</h2>
                   <p>{statusState.result?.status || "Waiting"}</p>
                 </div>
-              </div>
+              </div> : (
+                <div className="consultation-chat-header consultation-chat-header--preactive">
+                  <button className="consultation-toolbar__back consultation-toolbar__back--inline" type="button" onClick={() => navigate("/patient")}>
+                    {"\u2190"} Back
+                  </button>
+                  <div className="consultation-chat-header__copy">
+                    <h2>{roomWaitingForDoctor ? "You are in the queue" : "Consultation Access"}</h2>
+                    <p>{roomStatusMessage}</p>
+                  </div>
+                </div>
+              )}
 
-          <div ref={transcriptWindowRef} className="transcript-window transcript-window--large">
-            {timelineItems.length ? (
-              timelineItems.map((entry) =>
+          {hasActiveConsultation ? <div ref={transcriptWindowRef} className="transcript-window transcript-window--large">
+            {visibleTimelineItems.length ? (
+              visibleTimelineItems.map((entry) =>
                 entry.kind === "document" ? (
                   <article
                     key={`${entry.payload.kind}-${entry.payload.document_id}-${entry.payload.created_at}`}
@@ -2178,7 +2196,11 @@ export default function ConsultationPage() {
               </p>
             )}
             <div ref={transcriptEndRef} />
-          </div>
+          </div> : (
+            <div className="consultation-preactive-panel">
+              <p className="consultation-status__message">{roomStatusMessage}</p>
+            </div>
+          )}
 
           <div className="consultation-room__composer">
             <form

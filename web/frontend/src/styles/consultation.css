@@ -106,6 +106,10 @@
   min-height: 0;
 }
 
+.consultation-room--preactive .consultation-room__workspace {
+  display: block;
+}
+
 .consultation-room__sidebar,
 .consultation-room__chatpane {
   min-height: 0;
@@ -123,6 +127,23 @@
   display: flex;
   flex-direction: column;
   gap: 0.42rem;
+}
+
+.consultation-room--preactive .consultation-room__chatpane {
+  margin: 0 auto;
+  max-width: 760px;
+  min-height: min(58dvh, 520px);
+}
+
+.consultation-chat-header--preactive {
+  align-items: flex-start;
+}
+
+.consultation-preactive-panel {
+  align-content: center;
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 180px;
 }
 
 .consultation-room__chatpane .transcript-window--large {
