@@ -538,6 +538,7 @@ export default function ConsultationPage() {
           message: getRoomMessage(result, TRANSCRIPT_PENDING_MESSAGE),
           transcript: [],
         });
+        streamConnectedRef.current = false;
         setDocumentState({
           status: "idle",
           message: "Documents will load once the consultation is active.",
@@ -620,7 +621,9 @@ export default function ConsultationPage() {
   }, [callState?.status, callState?.connected_at, callState?.started_at]);
 
   useEffect(() => {
-    if (!reference.trim()) {
+    const consultationId = statusState.result?.consultation_id;
+    if (!reference.trim() || !consultationId) {
+      streamConnectedRef.current = false;
       return undefined;
     }
 
@@ -676,6 +679,9 @@ export default function ConsultationPage() {
 
     source.onerror = () => {
       streamConnectedRef.current = false;
+      if (!statusResultRef.current?.consultation_id) {
+        return;
+      }
       setTranscriptState((current) => ({
         ...current,
         status: current.transcript.length ? current.status : "error",
@@ -689,7 +695,7 @@ export default function ConsultationPage() {
       streamConnectedRef.current = false;
       source.close();
     };
-  }, [reference]);
+  }, [reference, statusState.result?.consultation_id]);
 
   useEffect(() => {
     if (!reference.trim()) {
