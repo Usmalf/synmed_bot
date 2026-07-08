@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from . import config  # noqa: F401
-from database import init_db
+from database import close_database_pool, init_db
 from services import storage_service
 from services.operational_errors import log_exception
 
@@ -107,6 +107,7 @@ async def on_shutdown():
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
+    close_database_pool()
 
 
 async def _license_reminder_loop():

@@ -5,6 +5,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+_POSTGRES_POOL = None
+_POSTGRES_POOL_URL = ""
+
 
 AUTO_ID_COLUMNS = {
     "admin_audit_logs": "id",
@@ -132,8 +135,10 @@ class PostgresCursor:
 
 
 class PostgresConnection:
-    def __init__(self, raw_connection):
+    def __init__(self, raw_connection, close_callback=None):
         self._raw = raw_connection
+        self._close_callback = close_callback
+        self._closed = False
 
     def __enter__(self):
         return self
@@ -155,19 +160,67 @@ class PostgresConnection:
         self._raw.rollback()
 
     def close(self):
+        if self._closed:
+            return
+        self._closed = True
+        if self._close_callback:
+            self._close_callback(self._raw)
+            return
         self._raw.close()
+
+
+def _postgres_pool_config() -> tuple[int, int]:
+    min_size = int(os.getenv("POSTGRES_POOL_MIN_SIZE", "1") or "1")
+    max_size = int(os.getenv("POSTGRES_POOL_MAX_SIZE", "10") or "10")
+    min_size = max(0, min_size)
+    max_size = max(1, max_size)
+    if min_size > max_size:
+        max_size = min_size
+    return min_size, max_size
+
+
+def get_postgres_pool():
+    global _POSTGRES_POOL, _POSTGRES_POOL_URL
+    database_url = get_database_url()
+    if not database_url:
+        return None
+    if _POSTGRES_POOL is not None and _POSTGRES_POOL_URL == database_url:
+        return _POSTGRES_POOL
+
+    try:
+        from psycopg.rows import dict_row
+        from psycopg_pool import ConnectionPool
+    except ImportError as exc:
+        raise RuntimeError("DATABASE_URL is set but psycopg_pool is not installed.") from exc
+
+    if _POSTGRES_POOL is not None:
+        _POSTGRES_POOL.close()
+
+    min_size, max_size = _postgres_pool_config()
+    _POSTGRES_POOL = ConnectionPool(
+        conninfo=database_url,
+        min_size=min_size,
+        max_size=max_size,
+        kwargs={"row_factory": dict_row},
+    )
+    _POSTGRES_POOL_URL = database_url
+    return _POSTGRES_POOL
+
+
+def close_database_pool():
+    global _POSTGRES_POOL, _POSTGRES_POOL_URL
+    if _POSTGRES_POOL is not None:
+        _POSTGRES_POOL.close()
+    _POSTGRES_POOL = None
+    _POSTGRES_POOL_URL = ""
 
 
 def get_connection():
     database_url = get_database_url()
     if database_url:
-        try:
-            import psycopg
-            from psycopg.rows import dict_row
-        except ImportError as exc:
-            raise RuntimeError("DATABASE_URL is set but psycopg is not installed.") from exc
-
-        return PostgresConnection(psycopg.connect(database_url, row_factory=dict_row))
+        pool = get_postgres_pool()
+        raw_connection = pool.getconn()
+        return PostgresConnection(raw_connection, close_callback=pool.putconn)
 
     conn = sqlite3.connect(get_database_path())
     conn.row_factory = sqlite3.Row
