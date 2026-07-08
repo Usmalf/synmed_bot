@@ -1,9 +1,11 @@
 import json
+from threading import RLock
 from datetime import datetime, timezone
 
 from database import get_connection
 
 UTC = timezone.utc
+_CALL_STATE_LOCK = RLock()
 
 
 def _now_iso() -> str:
@@ -85,6 +87,13 @@ def save_consultation_call_state(consultation_id: str, state: dict) -> dict:
         )
         conn.commit()
     return normalized
+
+
+def update_consultation_call_state(consultation_id: str, transform) -> dict:
+    with _CALL_STATE_LOCK:
+        current = get_consultation_call_state(consultation_id)
+        next_state = transform(current)
+        return save_consultation_call_state(consultation_id, next_state)
 
 
 def clear_consultation_call_state(consultation_id: str):

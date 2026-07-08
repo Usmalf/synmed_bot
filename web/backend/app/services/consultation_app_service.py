@@ -10,7 +10,7 @@ from database import get_connection
 from services.consultation_calls import (
     clear_consultation_call_state,
     get_consultation_call_state,
-    save_consultation_call_state,
+    update_consultation_call_state,
 )
 from services.emergency import detect_emergency
 from services.consultation_records import log_consultation_message
@@ -722,21 +722,22 @@ def start_patient_call(reference: str, call_type: str, offer_sdp: dict) -> dict:
     if not consultation_id:
         return {"ok": False, "message": "No active consultation is available for calling yet.", "consultation_id": None, "call": None}
 
-    current = get_consultation_call_state(consultation_id)
-    next_state = save_consultation_call_state(
-        consultation_id,
-        {
+    def set_ringing(current: dict) -> dict:
+        preserved_patient_candidates = current.get("patient_candidates") if current.get("status") == "idle" else []
+        preserved_doctor_candidates = current.get("doctor_candidates") if current.get("status") == "idle" else []
+        return {
             **current,
             "status": "ringing",
             "call_type": call_type,
             "initiated_by": "patient",
             "offer_sdp": offer_sdp,
             "answer_sdp": None,
-            "patient_candidates": [],
-            "doctor_candidates": [],
+            "patient_candidates": preserved_patient_candidates or [],
+            "doctor_candidates": preserved_doctor_candidates or [],
             "connected_at": None,
-        },
-    )
+        }
+
+    next_state = update_consultation_call_state(consultation_id, set_ringing)
     return {
         "ok": True,
         "message": f"{call_type.title()} call is ringing.",
@@ -752,15 +753,14 @@ def accept_patient_call(reference: str, answer_sdp: dict) -> dict:
     if not consultation_id:
         return {"ok": False, "message": "No active consultation is available for calling yet.", "consultation_id": None, "call": None}
 
-    current = get_consultation_call_state(consultation_id)
-    next_state = save_consultation_call_state(
-        consultation_id,
-        {
+    def set_accepted(current: dict) -> dict:
+        return {
             **current,
             "status": "active",
             "answer_sdp": answer_sdp,
-        },
-    )
+        }
+
+    next_state = update_consultation_call_state(consultation_id, set_accepted)
     return {
         "ok": True,
         "message": "Call accepted.",
@@ -776,17 +776,16 @@ def reject_patient_call(reference: str) -> dict:
     if not consultation_id:
         return {"ok": False, "message": "No active consultation is available for calling yet.", "consultation_id": None, "call": None}
 
-    current = get_consultation_call_state(consultation_id)
-    next_state = save_consultation_call_state(
-        consultation_id,
-        {
+    def set_rejected(current: dict) -> dict:
+        return {
             **current,
             "status": "rejected",
             "answer_sdp": None,
             "patient_candidates": [],
             "doctor_candidates": [],
-        },
-    )
+        }
+
+    next_state = update_consultation_call_state(consultation_id, set_rejected)
     return {
         "ok": True,
         "message": "Call rejected.",
@@ -802,15 +801,14 @@ def add_patient_call_candidate(reference: str, candidate: dict) -> dict:
     if not consultation_id:
         return {"ok": False, "message": "No active consultation is available for calling yet.", "consultation_id": None, "call": None}
 
-    current = get_consultation_call_state(consultation_id)
-    next_candidates = [*(current.get("patient_candidates") or []), candidate]
-    next_state = save_consultation_call_state(
-        consultation_id,
-        {
+    def append_candidate(current: dict) -> dict:
+        next_candidates = [*(current.get("patient_candidates") or []), candidate]
+        return {
             **current,
             "patient_candidates": next_candidates,
-        },
-    )
+        }
+
+    next_state = update_consultation_call_state(consultation_id, append_candidate)
     return {
         "ok": True,
         "message": "Candidate received.",
@@ -826,13 +824,13 @@ def end_patient_call_session(reference: str) -> dict:
     if not consultation_id:
         return {"ok": False, "message": "No active consultation is available for calling yet.", "consultation_id": None, "call": None}
 
-    next_state = save_consultation_call_state(
-        consultation_id,
-        {
-            **get_consultation_call_state(consultation_id),
+    def set_ended(current: dict) -> dict:
+        return {
+            **current,
             "status": "ended",
-        },
-    )
+        }
+
+    next_state = update_consultation_call_state(consultation_id, set_ended)
     return {
         "ok": True,
         "message": "Call ended.",

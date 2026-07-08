@@ -974,6 +974,11 @@ export default function ConsultationPage() {
       if (remoteAudioRef.current) {
         remoteAudioRef.current.srcObject = remoteStream;
       }
+      setCallUiState((current) => ({
+        ...current,
+        status: "active",
+        message: "Call connected.",
+      }));
     };
     peer.onicecandidate = async (event) => {
       if (!event.candidate) {
@@ -1067,8 +1072,8 @@ export default function ConsultationPage() {
       setCallState(result.call || null);
       setCallUiState((current) => ({
         ...current,
-        status: "active",
-        message: "Call connected.",
+        status: "connecting",
+        message: "Connecting media...",
       }));
     } catch (error) {
       closeCallMedia();
@@ -1621,8 +1626,8 @@ export default function ConsultationPage() {
           await peer.setRemoteDescription(new RTCSessionDescription(callState.answer_sdp));
           setCallUiState((current) => ({
             ...current,
-            status: "active",
-            message: "Call connected.",
+            status: remoteStreamRef.current ? "active" : "connecting",
+            message: remoteStreamRef.current ? "Call connected." : "Connecting media...",
           }));
         } catch {}
       }
