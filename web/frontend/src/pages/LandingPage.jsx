@@ -65,10 +65,29 @@ const proofStats = [
 ];
 
 const trustPoints = [
-  "Speak with verified medical doctors",
+  "Speak with MDCN-licensed doctors",
   "Return to your care without starting all over",
   "Find prescriptions and test requests after consultation",
   "Keep your health history easy to reach",
+];
+
+const trustBadges = [
+  {
+    title: "MDCN-licensed doctors",
+    body: "Consult with doctors licensed to practise medicine in Nigeria.",
+  },
+  {
+    title: "Secure patient access",
+    body: "Your dashboard keeps consultations, documents, and follow-up care organised.",
+  },
+  {
+    title: "Support when needed",
+    body: "Reach SynMed through customer support, WhatsApp, Telegram, or email.",
+  },
+  {
+    title: "Nigeria-based care",
+    body: "Built for patients seeking online medical support in Nigeria.",
+  },
 ];
 
 const testimonials = [
@@ -241,6 +260,17 @@ export default function LandingPage() {
         </div>
       </section>
 
+      <RevealOnScroll delay={5}>
+        <section className="landing-trust-bar" aria-label="SynMed trust highlights">
+          {trustBadges.map((item) => (
+            <article key={item.title} className="landing-trust-badge">
+              <strong>{item.title}</strong>
+              <span>{item.body}</span>
+            </article>
+          ))}
+        </section>
+      </RevealOnScroll>
+
       <RevealOnScroll delay={10}>
         <section className="landing-section landing-section--brand-intro">
           <div className="landing-section__heading">
@@ -408,6 +438,34 @@ export default function LandingPage() {
             </article>
           ))}
         </div>
+        </section>
+      </RevealOnScroll>
+
+      <RevealOnScroll delay={210}>
+        <section className="landing-support-band">
+          <div className="landing-support-band__copy">
+            <span>Need help before you start?</span>
+            <h2>SynMed support is close by.</h2>
+            <p>
+              For login, payment, document, or consultation access questions, contact support through WhatsApp,
+              Telegram, email, or the customer support chat on this page.
+            </p>
+          </div>
+          <div className="landing-support-band__actions">
+            <a className="button button--primary" href="https://wa.me/2348107840312" target="_blank" rel="noreferrer">
+              WhatsApp
+            </a>
+            <a className="button button--secondary" href="mailto:synmedtelehealth@gmail.com">
+              Email Support
+            </a>
+            <a className="button button--secondary" href="https://t.me/SynmedTelehealth" target="_blank" rel="noreferrer">
+              Telegram
+            </a>
+          </div>
+          <p className="landing-safety-note">
+            SynMed Telehealth is for non-emergency online care. If symptoms are severe, life-threatening, or rapidly
+            worsening, seek emergency medical care immediately.
+          </p>
         </section>
       </RevealOnScroll>
 

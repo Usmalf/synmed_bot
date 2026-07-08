@@ -204,10 +204,39 @@
 
 .landing-section,
 .landing-strip,
+.landing-support-band,
+.landing-trust-bar,
 .landing-visual-band {
   background: transparent;
   border: 0;
   box-shadow: none;
+}
+
+.landing-trust-bar {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.landing-trust-badge {
+  border-left: 3px solid #0f6070;
+  display: grid;
+  gap: 0.45rem;
+  min-height: 116px;
+  padding: 0.3rem 0 0.3rem 1rem;
+}
+
+.landing-trust-badge strong {
+  color: #0c2f3a;
+  font-family: var(--font-display);
+  font-size: 1.06rem;
+  line-height: 1.1;
+}
+
+.landing-trust-badge span {
+  color: #52717b;
+  font-size: 0.94rem;
+  line-height: 1.55;
 }
 
 .landing-strip {
@@ -444,6 +473,54 @@
 .landing-strip__item p {
   color: #486a75;
   margin: 0;
+}
+
+.landing-support-band {
+  align-items: start;
+  display: grid;
+  gap: 1.4rem;
+  grid-template-columns: minmax(0, 1.25fr) minmax(240px, 0.75fr);
+}
+
+.landing-support-band__copy {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.landing-support-band__copy span {
+  color: #0f6070;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.landing-support-band__copy h2 {
+  color: #0c2f3a;
+  font-family: var(--font-display);
+  font-size: clamp(1.9rem, 3vw, 2.7rem);
+  line-height: 1;
+  margin: 0;
+}
+
+.landing-support-band__copy p,
+.landing-safety-note {
+  color: #486a75;
+  line-height: 1.7;
+  margin: 0;
+}
+
+.landing-support-band__actions {
+  align-items: stretch;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.landing-safety-note {
+  border-top: 1px solid rgba(12, 77, 95, 0.1);
+  font-size: 0.94rem;
+  grid-column: 1 / -1;
+  padding-top: 1.05rem;
 }
 
 .landing-section {
@@ -755,10 +832,12 @@ body:not([data-background-theme="light"]) .landing-hero__title,
 body:not([data-background-theme="light"]) .landing-hero__focus h2,
 body:not([data-background-theme="light"]) .landing-strip__copy h2,
 body:not([data-background-theme="light"]) .landing-section__heading h2,
+body:not([data-background-theme="light"]) .landing-support-band__copy h2,
 body:not([data-background-theme="light"]) .landing-visual-band__copy h2,
 body:not([data-background-theme="light"]) .landing-feature-card h3,
 body:not([data-background-theme="light"]) .landing-flow-card h3,
 body:not([data-background-theme="light"]) .landing-doctor-card h3,
+body:not([data-background-theme="light"]) .landing-trust-badge strong,
 body:not([data-background-theme="light"]) .landing-visual-band__points strong,
 body:not([data-background-theme="light"]) .landing-footer h3 {
   color: #f2f8fa;
@@ -771,9 +850,12 @@ body:not([data-background-theme="light"]) .landing-hero__title {
 body:not([data-background-theme="light"]) .landing-hero__body,
 body:not([data-background-theme="light"]) .landing-hero__focus p,
 body:not([data-background-theme="light"]) .landing-strip__item p,
+body:not([data-background-theme="light"]) .landing-support-band__copy p,
+body:not([data-background-theme="light"]) .landing-safety-note,
 body:not([data-background-theme="light"]) .landing-feature-card p,
 body:not([data-background-theme="light"]) .landing-flow-card p,
 body:not([data-background-theme="light"]) .landing-doctor-card p,
+body:not([data-background-theme="light"]) .landing-trust-badge span,
 body:not([data-background-theme="light"]) .landing-visual-band__copy > p,
 body:not([data-background-theme="light"]) .landing-visual-band__points span,
 body:not([data-background-theme="light"]) .landing-brand-intro__copy,
@@ -823,10 +905,19 @@ body:not([data-background-theme="light"]) .landing-doctor-card__badge {
 
 body:not([data-background-theme="light"]) .landing-doctor-card__footer span,
 body:not([data-background-theme="light"]) .landing-testimonial-card span,
+body:not([data-background-theme="light"]) .landing-support-band__copy span,
 body:not([data-background-theme="light"]) .landing-footer__heading,
 body:not([data-background-theme="light"]) .landing-footer__links a,
 body:not([data-background-theme="light"]) .landing-footer__contact-link {
   color: #71dbe1;
+}
+
+body:not([data-background-theme="light"]) .landing-trust-badge {
+  border-left-color: #71dbe1;
+}
+
+body:not([data-background-theme="light"]) .landing-safety-note {
+  border-top-color: rgba(108, 157, 171, 0.18);
 }
 
 body:not([data-background-theme="light"]) .landing-footer__socials a {
@@ -913,6 +1004,8 @@ body:not([data-background-theme="light"]) .landing-tip-panel {
 @media (max-width: 1080px) {
   .landing-hero,
   .landing-strip,
+  .landing-support-band,
+  .landing-trust-bar,
   .landing-visual-band,
   .landing-tip-panel,
   .landing-section--split,
