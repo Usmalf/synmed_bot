@@ -200,13 +200,28 @@ def load_active_consultations():
         try:
             cursor.execute(
                 """
-                SELECT consultation_id, patient_id, doctor_id, patient_details_json
-                FROM active_consultations_runtime
+                SELECT acr.consultation_id, acr.patient_id, acr.doctor_id,
+                       acr.patient_details_json, c.status AS consultation_status,
+                       drp.status AS doctor_presence_status
+                FROM active_consultations_runtime acr
+                LEFT JOIN consultations c ON c.consultation_id = acr.consultation_id
+                LEFT JOIN doctor_runtime_presence drp ON drp.doctor_id = acr.doctor_id
                 """
             )
             rows = cursor.fetchall()
         except Exception:
             return None
+        stale_consultation_ids = [
+            row["consultation_id"]
+            for row in rows
+            if row["consultation_status"] != "active" or row["doctor_presence_status"] != "busy"
+        ]
+        if stale_consultation_ids:
+            cursor.executemany(
+                "DELETE FROM active_consultations_runtime WHERE consultation_id = ?",
+                [(consultation_id,) for consultation_id in stale_consultation_ids],
+            )
+            conn.commit()
     return [
         {
             "consultation_id": row["consultation_id"],
@@ -215,6 +230,7 @@ def load_active_consultations():
             "patient_details": _json_load(row["patient_details_json"]),
         }
         for row in rows
+        if row["consultation_status"] == "active" and row["doctor_presence_status"] == "busy"
     ]
 
 
