@@ -172,6 +172,14 @@ def save_active_consultation(*, consultation_id: str, patient_id: int, doctor_id
         cursor = conn.cursor()
         cursor.execute(
             """
+            DELETE FROM active_consultations_runtime
+            WHERE consultation_id <> ?
+              AND (patient_id = ? OR doctor_id = ?)
+            """,
+            (consultation_id, patient_id, doctor_id),
+        )
+        cursor.execute(
+            """
             INSERT INTO active_consultations_runtime (
                 consultation_id, patient_id, doctor_id, patient_details_json
             )
@@ -207,6 +215,7 @@ def load_active_consultations():
                 """
                 SELECT acr.consultation_id, acr.patient_id, acr.doctor_id,
                        acr.patient_details_json, c.status AS consultation_status,
+                       c.created_at AS consultation_created_at,
                        drp.status AS doctor_presence_status
                 FROM active_consultations_runtime acr
                 LEFT JOIN consultations c ON c.consultation_id = acr.consultation_id
@@ -228,6 +237,38 @@ def load_active_consultations():
                 [(consultation_id,) for consultation_id in stale_consultation_ids],
             )
             conn.commit()
+
+    active_rows = [
+        row
+        for row in rows
+        if row["consultation_status"] == "active"
+        and _presence_has_status(row["doctor_presence_status"], "web", "busy")
+    ]
+    active_rows.sort(key=lambda row: row["consultation_created_at"] or "", reverse=True)
+
+    selected_rows = []
+    seen_patients = set()
+    seen_doctors = set()
+    duplicate_consultation_ids = []
+    for row in active_rows:
+        patient_id = row["patient_id"]
+        doctor_id = row["doctor_id"]
+        if patient_id in seen_patients or doctor_id in seen_doctors:
+            duplicate_consultation_ids.append(row["consultation_id"])
+            continue
+        selected_rows.append(row)
+        seen_patients.add(patient_id)
+        seen_doctors.add(doctor_id)
+
+    if duplicate_consultation_ids:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.executemany(
+                "DELETE FROM active_consultations_runtime WHERE consultation_id = ?",
+                [(consultation_id,) for consultation_id in duplicate_consultation_ids],
+            )
+            conn.commit()
+
     return [
         {
             "consultation_id": row["consultation_id"],
@@ -235,9 +276,7 @@ def load_active_consultations():
             "doctor_id": row["doctor_id"],
             "patient_details": _json_load(row["patient_details_json"]),
         }
-        for row in rows
-        if row["consultation_status"] == "active"
-        and _presence_has_status(row["doctor_presence_status"], "web", "busy")
+        for row in selected_rows
     ]
 
 
