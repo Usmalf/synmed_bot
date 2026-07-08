@@ -275,8 +275,24 @@ function mergeRealtimeMessage(currentTranscript = [], message) {
 }
 
 function createPeerConnection() {
+  const iceServers = [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:global.stun.twilio.com:3478" },
+  ];
+  const turnUrl = (import.meta.env.VITE_WEBRTC_TURN_URL || "").trim();
+  const turnUsername = (import.meta.env.VITE_WEBRTC_TURN_USERNAME || "").trim();
+  const turnCredential = (import.meta.env.VITE_WEBRTC_TURN_CREDENTIAL || "").trim();
+  if (turnUrl && turnUsername && turnCredential) {
+    iceServers.push({
+      urls: turnUrl.split(",").map((url) => url.trim()).filter(Boolean),
+      username: turnUsername,
+      credential: turnCredential,
+    });
+  }
+
   return new RTCPeerConnection({
-    iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+    iceServers,
+    iceCandidatePoolSize: 4,
   });
 }
 
@@ -824,8 +840,22 @@ export default function DoctorDashboardPage() {
       .catch(() => {
       setTranscriptState((current) => ({
         ...current,
-        status: "error",
-        message: "Unable to send doctor message right now.",
+        status: current.transcript?.some(
+          (item) =>
+            item.optimistic &&
+            item.sender_role === "doctor_web" &&
+            item.message_text === messageText,
+        )
+          ? current.status
+          : "error",
+        message: current.transcript?.some(
+          (item) =>
+            item.optimistic &&
+            item.sender_role === "doctor_web" &&
+            item.message_text === messageText,
+        )
+          ? current.message
+          : "Unable to send doctor message right now.",
       }));
       });
   }
@@ -2240,13 +2270,27 @@ export default function DoctorDashboardPage() {
     const peer = createPeerConnection();
     stream.getTracks().forEach((track) => peer.addTrack(track, stream));
     peer.ontrack = (event) => {
-      const [remoteStream] = event.streams;
+      const [remoteStream] = event.streams.length
+        ? event.streams
+        : [remoteStreamRef.current || new MediaStream()];
+      if (!event.streams.length) {
+        remoteStream.addTrack(event.track);
+      }
       attachDoctorRemoteCallStream(remoteStream);
       setCallUiState((current) => ({
         ...current,
         status: "active",
         message: "Call connected.",
       }));
+    };
+    peer.oniceconnectionstatechange = () => {
+      if (["failed", "disconnected"].includes(peer.iceConnectionState)) {
+        setCallUiState((current) => ({
+          ...current,
+          status: current.status === "active" ? current.status : "connecting",
+          message: "Media is still trying to connect. If it stays here, the network may need TURN relay.",
+        }));
+      }
     };
     peer.onicecandidate = async (event) => {
       if (!event.candidate) {

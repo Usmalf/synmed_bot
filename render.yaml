@@ -77,6 +77,12 @@ services:
     envVars:
       - key: VITE_API_BASE_URL
         sync: false
+      - key: VITE_WEBRTC_TURN_URL
+        sync: false
+      - key: VITE_WEBRTC_TURN_USERNAME
+        sync: false
+      - key: VITE_WEBRTC_TURN_CREDENTIAL
+        sync: false
 
   - type: worker
     name: synmed-bot

@@ -74,6 +74,14 @@ Required environment variable:
 VITE_API_BASE_URL=https://your-backend-domain
 ```
 
+Optional WebRTC relay variables for reliable voice/video calls across stricter mobile or international networks:
+
+```text
+VITE_WEBRTC_TURN_URL=turn:your-turn-host:3478
+VITE_WEBRTC_TURN_USERNAME=your-turn-username
+VITE_WEBRTC_TURN_CREDENTIAL=your-turn-password
+```
+
 You can check local or copied deployment environment values without printing secrets:
 
 ```powershell
