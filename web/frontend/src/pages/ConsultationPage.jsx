@@ -1335,6 +1335,7 @@ export default function ConsultationPage() {
   }
 
   async function setConsultationStateFromSymptoms(symptoms) {
+    setQueuedPromptVisible(false);
     setConsultationStateMessage("Submitting your consultation request...");
 
     try {
@@ -1588,7 +1589,7 @@ export default function ConsultationPage() {
       statusState.result?.status || "not_started",
     );
   const roomWaitingForDoctor =
-    !hasActiveConsultation && statusState.result?.status === "queued";
+    !hasActiveConsultation && statusState.result?.submitted === true && statusState.result?.status === "queued";
   const roomStatusMessage = roomNeedsInitialSymptoms
     ? INITIAL_ROOM_MESSAGE
     : roomWaitingForDoctor

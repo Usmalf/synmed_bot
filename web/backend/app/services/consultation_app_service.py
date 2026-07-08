@@ -244,6 +244,37 @@ async def submit_consultation_request(reference: str, symptoms: str) -> dict:
             "submitted_at": datetime.now(UTC).isoformat(),
         },
     )
+    registry.restore_runtime_state()
+    queued_details = registry.pending_patient_details.get(patient_runtime_id, {})
+    if patient_runtime_id not in registry.get_waiting_patients("web") or queued_details.get("reference") != reference:
+        log_operational_error(
+            source="consultation_queue_validation",
+            severity="warning",
+            message="Patient consultation request could not be confirmed in the web queue.",
+            user_role="patient",
+            user_id=str(patient_runtime_id),
+            details={
+                "reference": reference,
+                "patient_id": patient_runtime_id,
+                "queue_ids": list(registry.waiting_patients),
+                "has_details": bool(queued_details),
+                "queued_reference": queued_details.get("reference"),
+                "queued_source": queued_details.get("source"),
+                "payment_status": payment["status"],
+                "payment_patient_id": payment["patient_id"],
+            },
+        )
+        return {
+            "submitted": False,
+            "message": "Unable to place your consultation request in the doctor queue right now. Please try again.",
+            "status": "not_started",
+            "consultation_id": None,
+            "doctor": None,
+            "patient": _patient_payload(patient),
+            "emergency": emergency,
+            "call": None,
+        }
+
     return {
         "submitted": True,
         "message": (
