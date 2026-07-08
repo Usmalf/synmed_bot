@@ -3,7 +3,7 @@ import json
 from datetime import datetime, timedelta, timezone
 
 from services.patient_records import get_patient_by_identifier
-from services.paystack import get_payment_by_reference, is_payment_used_for_closed_consultation
+from services.paystack import get_payment_by_reference
 from services.runtime_state import (
     load_doctor_presence,
     load_waiting_patients,
@@ -61,8 +61,6 @@ def _is_assignable_waiting_patient(patient_id: int, details: dict) -> bool:
 
     payment = get_payment_by_reference(reference)
     if not payment or payment["status"] != "verified":
-        return False
-    if is_payment_used_for_closed_consultation(reference):
         return False
 
     patient = get_patient_by_identifier(payment["patient_id"] or "")

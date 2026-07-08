@@ -18,7 +18,6 @@ from services import storage_service
 from services.ratings_service import add_rating, add_review, has_rating, has_review
 from services.paystack import (
     get_payment_by_reference,
-    is_payment_used_for_closed_consultation,
     is_payment_within_validity_window,
 )
 from services.patient_records import get_patient_by_identifier
@@ -162,18 +161,6 @@ async def submit_consultation_request(reference: str, symptoms: str) -> dict:
             "submitted": False,
             "message": "Consultation access has expired. Complete payment or request a new admin access grant.",
             "status": "access_expired",
-            "consultation_id": None,
-            "doctor": None,
-            "patient": None,
-            "emergency": None,
-            "call": None,
-        }
-
-    if is_payment_used_for_closed_consultation(reference):
-        return {
-            "submitted": False,
-            "message": "This payment has already been used for a completed consultation. Please start a new payment to begin another consultation.",
-            "status": "payment_used",
             "consultation_id": None,
             "doctor": None,
             "patient": None,
