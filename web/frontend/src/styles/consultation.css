@@ -187,6 +187,52 @@
   display: none;
 }
 
+.consultation-layout--preactive .section-card {
+  min-height: min(72dvh, 620px);
+}
+
+.consultation-intake-card {
+  align-content: center;
+  display: grid;
+  gap: 1.4rem;
+  margin: 0 auto;
+  max-width: 720px;
+  min-height: min(62dvh, 520px);
+  position: relative;
+  width: 100%;
+}
+
+.consultation-intake-card__header {
+  display: grid;
+  gap: 0.65rem;
+  text-align: center;
+}
+
+.consultation-intake-card__header h2 {
+  color: var(--color-ink);
+  font-family: var(--font-display);
+  font-size: clamp(1.8rem, 4vw, 2.55rem);
+  line-height: 1.04;
+  margin: 0;
+}
+
+.consultation-intake-card__header p {
+  color: var(--color-muted);
+  line-height: 1.7;
+  margin: 0 auto;
+  max-width: 58ch;
+}
+
+.consultation-intake-card__waiting {
+  display: grid;
+  gap: 1rem;
+  justify-items: center;
+}
+
+.consultation-intake-card .consultation-compose--initial {
+  margin: 0;
+}
+
 .consultation-room .consultation-overview {
   margin-top: 0;
   padding: 0;

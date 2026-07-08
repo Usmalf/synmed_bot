@@ -1957,6 +1957,85 @@ export default function ConsultationPage() {
         )
       : null;
 
+  if (!hasActiveConsultation) {
+    return (
+      <div className="consultation-layout consultation-layout--preactive">
+        <div className="consultation-toolbar">
+          <button className="consultation-toolbar__back" type="button" onClick={() => navigate("/patient")}>
+            {"\u2190"} Back to patient home
+          </button>
+        </div>
+
+        <SectionCard title="" subtitle="">
+          <div className={`consultation-intake-card consultation-intake-card--${statusState.result?.status || "idle"}`}>
+            <div className="consultation-floating-theme" aria-label="Theme">
+              {BACKGROUND_OPTIONS.map((option) => (
+                <button
+                  key={option.key}
+                  className={
+                    backgroundTheme === option.key
+                      ? "site-shell__theme-toggle site-shell__theme-toggle--active"
+                      : "site-shell__theme-toggle"
+                  }
+                  type="button"
+                  onClick={() => setBackgroundTheme(option.key)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="consultation-intake-card__header">
+              <span className="consultation-room__eyebrow">Consultation Access</span>
+              <h2>{roomWaitingForDoctor ? "You are in the queue" : "Tell the doctor how you feel"}</h2>
+              <p>{roomStatusMessage}</p>
+            </div>
+
+            {roomWaitingForDoctor ? (
+              <div className="consultation-intake-card__waiting">
+                <BrandedLoader compact label="Waiting for an available doctor..." />
+                <button className="button button--secondary" type="button" onClick={handleEndChat}>
+                  Cancel request
+                </button>
+              </div>
+            ) : (
+              <form className="form-panel form-panel--inline consultation-compose consultation-compose--initial" onSubmit={handleSendMessage}>
+                <label className="form-field form-field--grow">
+                  <span className="form-field__label">First symptom</span>
+                  <textarea
+                    className="form-field__input"
+                    ref={messageInputRef}
+                    rows="3"
+                    placeholder="Describe how you're feeling..."
+                    value={draftMessage}
+                    onChange={(event) => setDraftMessage(event.target.value)}
+                    onKeyDown={handleChatComposerKeyDown}
+                  />
+                </label>
+                <button className="button button--primary" type="submit" disabled={statusState.status === "loading"}>
+                  Start Consultation
+                </button>
+              </form>
+            )}
+          </div>
+        </SectionCard>
+
+        {queuedPromptVisible && roomWaitingForDoctor
+          ? createPortal(
+              <div className="consultation-queue-overlay" aria-live="polite">
+                <div className="consultation-queue-card">
+                  <BrandedLoader compact label="Waiting for doctor..." />
+                  <h3>Your symptoms have been submitted.</h3>
+                  <p>A SynMed doctor will join your consultation shortly. Please remain on this page.</p>
+                </div>
+              </div>,
+              document.body,
+            )
+          : null}
+      </div>
+    );
+  }
+
   return (
     <div className="consultation-layout">
       <div className="consultation-toolbar">
