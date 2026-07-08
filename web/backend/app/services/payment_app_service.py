@@ -9,6 +9,7 @@ from services.paystack import (
     create_payment_reference,
     get_payment_by_reference,
     get_latest_valid_payment_for_patient,
+    is_payment_used_for_closed_consultation,
     is_payment_within_validity_window,
     initialize_transaction,
     mark_payment_status,
@@ -184,6 +185,17 @@ async def verify_web_payment(reference: str) -> dict:
         return {
             "verified": False,
             "message": "This consultation payment has expired after the 24-hour access window. Start a new payment to continue.",
+            "reference": reference,
+            "paystack_status": payment["paystack_status"],
+            "amount": payment["amount"],
+            "currency": payment["currency"],
+            "patient": None,
+        }
+
+    if payment["status"] == "verified" and is_payment_used_for_closed_consultation(reference):
+        return {
+            "verified": False,
+            "message": "This consultation payment has already been used for a completed consultation. Start a new payment to begin another consultation.",
             "reference": reference,
             "paystack_status": payment["paystack_status"],
             "amount": payment["amount"],

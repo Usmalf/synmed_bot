@@ -227,6 +227,26 @@ def is_payment_within_validity_window(payment) -> bool:
     return datetime.now(UTC) - verified_at <= PAYMENT_TOKEN_VALIDITY
 
 
+def is_payment_used_for_closed_consultation(reference: str) -> bool:
+    normalized_reference = (reference or "").strip()
+    if not normalized_reference:
+        return False
+
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT 1
+            FROM consultations
+            WHERE payment_reference = ?
+              AND status = 'closed'
+            LIMIT 1
+            """,
+            (normalized_reference,),
+        )
+        return cursor.fetchone() is not None
+
+
 def get_latest_valid_payment_for_patient(patient_id: str):
     normalized_patient_id = (patient_id or "").strip().upper()
     if not normalized_patient_id:
@@ -251,7 +271,7 @@ def get_latest_valid_payment_for_patient(patient_id: str):
         rows = cursor.fetchall()
 
     for payment in rows:
-        if is_payment_within_validity_window(payment):
+        if is_payment_within_validity_window(payment) and not is_payment_used_for_closed_consultation(payment["reference"]):
             return payment
     return None
 
