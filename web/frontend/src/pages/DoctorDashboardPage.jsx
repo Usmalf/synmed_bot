@@ -600,6 +600,30 @@ export default function DoctorDashboardPage() {
     }
   }
 
+  async function refreshDoctorCallState() {
+    try {
+      const result = await fetchDoctorWorkspace();
+      setWorkspaceState((current) =>
+        current.result
+          ? {
+              ...current,
+              status: result.found ? "success" : "empty",
+              message: result.message,
+              result: {
+                ...current.result,
+                ...result,
+                active_consultation: result.active_consultation || current.result.active_consultation,
+              },
+            }
+          : {
+              status: result.found ? "success" : "empty",
+              message: result.message,
+              result,
+            },
+      );
+    } catch {}
+  }
+
   useEffect(() => {
     if (!authState.session?.user?.user_id || !workspaceState.result?.doctor) {
       return undefined;
@@ -1327,6 +1351,21 @@ export default function DoctorDashboardPage() {
     ["ringing", "active", "connecting"].includes(currentCall?.status || "") ||
     ["ringing", "active", "connecting", "starting"].includes(callUiState.status);
   const doctorHasLocalVideoTrack = Boolean(localStreamRef.current?.getVideoTracks().length);
+
+  useEffect(() => {
+    if (!doctorHasCallInProgress || remoteStreamRef.current) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== "hidden" && !remoteStreamRef.current) {
+        refreshDoctorCallState();
+      }
+    }, 1200);
+
+    return () => window.clearInterval(intervalId);
+  }, [doctorHasCallInProgress, currentCall?.updated_at, callUiState.status]);
+
   const doctorShowVideoCallLayout = currentCall?.call_type === "video" || doctorHasLocalVideoTrack;
   const doctorShowSelfPreviewAsMain = doctorShowVideoCallLayout && !doctorEffectiveActiveCall;
   const doctorActiveVideoControlsOnly = doctorShowVideoCallLayout && doctorEffectiveActiveCall;
@@ -1458,12 +1497,15 @@ export default function DoctorDashboardPage() {
   useEffect(() => {
     if (localVideoRef.current && localStreamRef.current) {
       localVideoRef.current.srcObject = localStreamRef.current;
+      localVideoRef.current.play?.().catch(() => {});
     }
     if (remoteVideoRef.current && remoteStreamRef.current) {
       remoteVideoRef.current.srcObject = remoteStreamRef.current;
+      remoteVideoRef.current.play?.().catch(() => {});
     }
     if (remoteAudioRef.current && remoteStreamRef.current) {
       remoteAudioRef.current.srcObject = remoteStreamRef.current;
+      remoteAudioRef.current.play?.().catch(() => {});
     }
   }, [callUiState.localMediaReady, currentCall?.status, currentCall?.call_type, callWindowMinimized]);
 
@@ -1675,16 +1717,7 @@ export default function DoctorDashboardPage() {
         return;
       }
 
-      for (const candidate of currentCall.patient_candidates || []) {
-        const key = JSON.stringify(candidate);
-        if (seenCandidateKeysRef.current.has(key)) {
-          continue;
-        }
-        try {
-          await peer.addIceCandidate(new RTCIceCandidate(candidate));
-          seenCandidateKeysRef.current.add(key);
-        } catch {}
-      }
+      await applyDoctorRemoteCallCandidates(currentCall.patient_candidates || []);
     }
 
     syncDoctorCallState();
@@ -2133,6 +2166,36 @@ export default function DoctorDashboardPage() {
     window.addEventListener("pointerup", stopCallWindowDrag);
   }
 
+  function attachDoctorRemoteCallStream(remoteStream) {
+    remoteStreamRef.current = remoteStream;
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = remoteStream;
+      remoteVideoRef.current.play?.().catch(() => {});
+    }
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = remoteStream;
+      remoteAudioRef.current.play?.().catch(() => {});
+    }
+  }
+
+  async function applyDoctorRemoteCallCandidates(candidates = []) {
+    const peer = peerConnectionRef.current;
+    if (!peer?.remoteDescription) {
+      return;
+    }
+
+    for (const candidate of candidates || []) {
+      const key = JSON.stringify(candidate);
+      if (seenCandidateKeysRef.current.has(key)) {
+        continue;
+      }
+      try {
+        await peer.addIceCandidate(new RTCIceCandidate(candidate));
+        seenCandidateKeysRef.current.add(key);
+      } catch {}
+    }
+  }
+
   function toggleDoctorAudio() {
     if (!localStreamRef.current) {
       return;
@@ -2178,13 +2241,7 @@ export default function DoctorDashboardPage() {
     stream.getTracks().forEach((track) => peer.addTrack(track, stream));
     peer.ontrack = (event) => {
       const [remoteStream] = event.streams;
-      remoteStreamRef.current = remoteStream;
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = remoteStream;
-      }
-      if (remoteAudioRef.current) {
-        remoteAudioRef.current.srcObject = remoteStream;
-      }
+      attachDoctorRemoteCallStream(remoteStream);
       setCallUiState((current) => ({
         ...current,
         status: "active",
@@ -2276,6 +2333,7 @@ export default function DoctorDashboardPage() {
       });
       const peer = await preparePeerConnection(callState.call_type || "voice");
       await peer.setRemoteDescription(new RTCSessionDescription(callState.offer_sdp));
+      await applyDoctorRemoteCallCandidates(callState.patient_candidates || []);
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
       const result = await acceptDoctorCall({

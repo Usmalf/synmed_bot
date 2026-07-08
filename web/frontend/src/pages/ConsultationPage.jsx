@@ -922,6 +922,36 @@ export default function ConsultationPage() {
     window.addEventListener("pointerup", stopCallWindowDrag);
   }
 
+  function attachRemoteCallStream(remoteStream) {
+    remoteStreamRef.current = remoteStream;
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = remoteStream;
+      remoteVideoRef.current.play?.().catch(() => {});
+    }
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = remoteStream;
+      remoteAudioRef.current.play?.().catch(() => {});
+    }
+  }
+
+  async function applyRemoteCallCandidates(candidates = []) {
+    const peer = peerConnectionRef.current;
+    if (!peer?.remoteDescription) {
+      return;
+    }
+
+    for (const candidate of candidates || []) {
+      const key = JSON.stringify(candidate);
+      if (seenCandidateKeysRef.current.has(key)) {
+        continue;
+      }
+      try {
+        await peer.addIceCandidate(new RTCIceCandidate(candidate));
+        seenCandidateKeysRef.current.add(key);
+      } catch {}
+    }
+  }
+
   function toggleLocalAudio() {
     if (!localStreamRef.current) {
       return;
@@ -967,13 +997,7 @@ export default function ConsultationPage() {
     stream.getTracks().forEach((track) => peer.addTrack(track, stream));
     peer.ontrack = (event) => {
       const [remoteStream] = event.streams;
-      remoteStreamRef.current = remoteStream;
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = remoteStream;
-      }
-      if (remoteAudioRef.current) {
-        remoteAudioRef.current.srcObject = remoteStream;
-      }
+      attachRemoteCallStream(remoteStream);
       setCallUiState((current) => ({
         ...current,
         status: "active",
@@ -1057,6 +1081,7 @@ export default function ConsultationPage() {
       });
       const peer = await preparePeerConnection(callState.call_type || "voice");
       await peer.setRemoteDescription(new RTCSessionDescription(callState.offer_sdp));
+      await applyRemoteCallCandidates(callState.doctor_candidates || []);
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
       const result = await acceptConsultationCall({
@@ -1209,6 +1234,29 @@ export default function ConsultationPage() {
     } catch {
       setAttachmentState({ status: "error", message: "Unable to send attachment right now." });
     }
+  }
+
+  async function refreshCallState(referenceToLoad) {
+    if (!referenceToLoad.trim()) {
+      return;
+    }
+
+    try {
+      const result = await fetchConsultationStatus(referenceToLoad.trim());
+      if (isStaleRoomDowngrade(result)) {
+        return;
+      }
+      setStatusState((current) => ({
+        status: result.submitted ? "success" : "empty",
+        message: result.message,
+        result: {
+          ...(current.result || {}),
+          ...result,
+        },
+      }));
+      maybeShowFeedbackFromEndedStatus(result);
+      setCallState(result.call || null);
+    } catch {}
   }
 
   function handlePatientAttachmentChange(event) {
@@ -1636,16 +1684,7 @@ export default function ConsultationPage() {
         return;
       }
 
-      for (const candidate of callState.doctor_candidates || []) {
-        const key = JSON.stringify(candidate);
-        if (seenCandidateKeysRef.current.has(key)) {
-          continue;
-        }
-        try {
-          await peer.addIceCandidate(new RTCIceCandidate(candidate));
-          seenCandidateKeysRef.current.add(key);
-        } catch {}
-      }
+      await applyRemoteCallCandidates(callState.doctor_candidates || []);
     }
 
     syncCallState();
@@ -1718,6 +1757,21 @@ export default function ConsultationPage() {
     ["ringing", "active", "connecting"].includes(callState?.status || "") ||
     ["ringing", "active", "connecting", "starting"].includes(callUiState.status);
   const hasLocalVideoTrack = Boolean(localStreamRef.current?.getVideoTracks().length);
+
+  useEffect(() => {
+    if (!reference.trim() || !hasCallInProgress || remoteStreamRef.current) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== "hidden" && !remoteStreamRef.current) {
+        refreshCallState(reference);
+      }
+    }, 1200);
+
+    return () => window.clearInterval(intervalId);
+  }, [reference, hasCallInProgress, callState?.updated_at, callUiState.status]);
+
   const showVideoCallLayout = callState?.call_type === "video" || hasLocalVideoTrack;
   const showSelfPreviewAsMain = showVideoCallLayout && !effectiveActiveCall;
   const activeVideoControlsOnly = showVideoCallLayout && effectiveActiveCall;
@@ -1749,12 +1803,15 @@ export default function ConsultationPage() {
   useEffect(() => {
     if (localVideoRef.current && localStreamRef.current) {
       localVideoRef.current.srcObject = localStreamRef.current;
+      localVideoRef.current.play?.().catch(() => {});
     }
     if (remoteVideoRef.current && remoteStreamRef.current) {
       remoteVideoRef.current.srcObject = remoteStreamRef.current;
+      remoteVideoRef.current.play?.().catch(() => {});
     }
     if (remoteAudioRef.current && remoteStreamRef.current) {
       remoteAudioRef.current.srcObject = remoteStreamRef.current;
+      remoteAudioRef.current.play?.().catch(() => {});
     }
   }, [callUiState.localMediaReady, callState?.status, callState?.call_type, callWindowMinimized, effectiveActiveCall]);
 
