@@ -34,6 +34,11 @@ def _presence_load(value: str | None):
     return {}
 
 
+def _presence_has_status(value: str | None, channel: str, status: str) -> bool:
+    status_map = _presence_load(value)
+    return status_map.get(channel) == status or status_map.get("telegram") == status
+
+
 def save_doctor_presence(*, doctor_id: int, status: str, channel: str | None = None):
     channel_key = (channel or "").strip().lower()
     with get_connection() as conn:
@@ -214,7 +219,8 @@ def load_active_consultations():
         stale_consultation_ids = [
             row["consultation_id"]
             for row in rows
-            if row["consultation_status"] != "active" or row["doctor_presence_status"] != "busy"
+            if row["consultation_status"] != "active"
+            or not _presence_has_status(row["doctor_presence_status"], "web", "busy")
         ]
         if stale_consultation_ids:
             cursor.executemany(
@@ -230,7 +236,8 @@ def load_active_consultations():
             "patient_details": _json_load(row["patient_details_json"]),
         }
         for row in rows
-        if row["consultation_status"] == "active" and row["doctor_presence_status"] == "busy"
+        if row["consultation_status"] == "active"
+        and _presence_has_status(row["doctor_presence_status"], "web", "busy")
     ]
 
 

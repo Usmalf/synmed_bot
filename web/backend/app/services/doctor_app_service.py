@@ -557,9 +557,11 @@ def connect_doctor_to_selected_patient(doctor_id: int, runtime_patient_id: int) 
         )
 
     patient_details = {**details, "doctor_channel": "web"}
+    registry.set_doctor_busy(doctor_id, channel="web")
     try:
         consultation_id = start_chat(runtime_patient_id, doctor_id, patient_details)
     except Exception as exc:
+        registry.set_doctor_available(doctor_id, channel="web")
         log_exception(
             exc,
             source="doctor_connect",
@@ -577,7 +579,6 @@ def connect_doctor_to_selected_patient(doctor_id: int, runtime_patient_id: int) 
         )
 
     registry.remove_patient_from_queue(runtime_patient_id)
-    registry.set_doctor_busy(doctor_id, channel="web")
     active_consultation = _active_consultation_payload_from_consultation(
         {
             "consultation_id": consultation_id,
