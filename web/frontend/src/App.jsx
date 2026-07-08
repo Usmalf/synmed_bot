@@ -14,6 +14,7 @@ import SiteShell from "./layouts/SiteShell.jsx";
 import AdminLayout from "./layouts/AdminLayout.jsx";
 import CustomerCareLayout from "./layouts/CustomerCareLayout.jsx";
 import DoctorLayout from "./layouts/DoctorLayout.jsx";
+import SeoMeta from "./components/SeoMeta.jsx";
 import {
   AdminActivityPage,
   AdminConsultationsPage,
@@ -78,6 +79,69 @@ const patientNavItems = [
 
 const INACTIVITY_LOGOUT_MS = 30 * 60 * 1000;
 const SESSION_IDLE_CHECK_MS = 30 * 1000;
+
+const seoByPath = {
+  "/": {
+    title: "SynMed Telehealth | Online Doctor Consultation in Nigeria",
+    description:
+      "SynMed Telehealth, also known as SynMed Health and synmedhealth, connects patients in Nigeria with verified doctors for online consultations, prescriptions, investigations, medical reports, and follow-up care.",
+  },
+  "/patient/register": {
+    title: "Register as a Patient | SynMed Telehealth",
+    description:
+      "Create a SynMed Telehealth patient account to access online doctor consultation, prescriptions, investigations, medical reports, appointments, and follow-up care in Nigeria.",
+  },
+  "/signin": {
+    title: "Sign In | SynMed Telehealth",
+    description:
+      "Sign in to SynMed Telehealth to continue patient care, access your dashboard, review documents, or manage your online consultation.",
+  },
+  "/doctor/signup": {
+    title: "Doctor Registration | SynMed Telehealth",
+    description:
+      "Apply to join SynMed Telehealth as a verified doctor for online consultation and digital patient care in Nigeria.",
+  },
+  "/terms": {
+    title: "Terms and Conditions | SynMed Telehealth",
+    description:
+      "Read the terms and conditions for using SynMed Telehealth services, including online consultation, payments, prescriptions, investigations, and support.",
+  },
+  "/privacy": {
+    title: "Privacy Policy | SynMed Telehealth",
+    description:
+      "Learn how SynMed Telehealth protects patient data, health information, account details, and support records while delivering online healthcare services.",
+  },
+};
+
+function getSeoForPath(pathname) {
+  if (seoByPath[pathname]) {
+    return {
+      ...seoByPath[pathname],
+      canonicalPath: pathname,
+      robots: "index, follow",
+    };
+  }
+
+  if (
+    pathname.startsWith("/admin") ||
+    pathname.startsWith("/customer-care") ||
+    pathname.startsWith("/doctor") ||
+    pathname.startsWith("/patient")
+  ) {
+    return {
+      title: "SynMed Telehealth Portal",
+      description: "Secure SynMed Telehealth workspace for registered users.",
+      canonicalPath: "/",
+      robots: "noindex, nofollow",
+    };
+  }
+
+  return {
+    ...seoByPath["/"],
+    canonicalPath: "/",
+    robots: "index, follow",
+  };
+}
 const SESSION_LAST_ACTIVITY_KEY = "synmed_session_last_activity_at";
 const LOGOUT_HOME_REDIRECT_KEY = "synmed_logout_redirect_home";
 const ACTIVITY_EVENTS = ["mousemove", "mousedown", "keydown", "scroll", "touchstart", "input"];
@@ -452,8 +516,12 @@ function AppNav() {
 }
 
 export default function App() {
+  const location = useLocation();
+  const seo = getSeoForPath(location.pathname);
+
   return (
     <SiteShell header={<AppNav />}>
+      <SeoMeta {...seo} />
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/terms" element={<TermsPage />} />

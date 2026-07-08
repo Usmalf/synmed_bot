@@ -456,6 +456,23 @@
   gap: 0.5rem;
 }
 
+.landing-section--brand-intro {
+  gap: 0.8rem;
+  max-width: 920px;
+}
+
+.landing-section--brand-intro .landing-section__heading h2 {
+  max-width: 22ch;
+}
+
+.landing-brand-intro__copy {
+  color: #486a75;
+  font-size: 1.04rem;
+  line-height: 1.8;
+  margin: 0;
+  max-width: 74ch;
+}
+
 .landing-section--feature-grid,
 .landing-doctor-grid,
 .landing-testimonials {
@@ -759,6 +776,7 @@ body:not([data-background-theme="light"]) .landing-flow-card p,
 body:not([data-background-theme="light"]) .landing-doctor-card p,
 body:not([data-background-theme="light"]) .landing-visual-band__copy > p,
 body:not([data-background-theme="light"]) .landing-visual-band__points span,
+body:not([data-background-theme="light"]) .landing-brand-intro__copy,
 body:not([data-background-theme="light"]) .landing-footer__tagline,
 body:not([data-background-theme="light"]) .landing-footer__contact span {
   color: #b8cdd4;

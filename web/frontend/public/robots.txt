@@ -1,4 +1,16 @@
 User-agent: *
 Allow: /
+Disallow: /admin
+Disallow: /customer-care
+Disallow: /doctor/account
+Disallow: /doctor/messages
+Disallow: /doctor/medical-reports
+Disallow: /patient/account
+Disallow: /patient/documents
+Disallow: /patient/history
+Disallow: /patient/medical-report-request
+Disallow: /patient/appointments
+Disallow: /patient/followup
+Disallow: /patient/consultation
 
 Sitemap: https://synmedhealth.com/sitemap.xml

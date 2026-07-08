@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SynMed Telehealth | Online Doctor Consultation in Nigeria | synmedhealth</title>
+    <title>SynMed Telehealth | Online Doctor Consultation in Nigeria</title>
     <meta
       name="description"
-      content="SynMed Telehealth, also searched as synmedhealth, helps patients in Nigeria access verified doctors online, request prescriptions, investigations, medical reports, follow-up care, and connected health support."
+      content="SynMed Telehealth, also known as SynMed Health and synmedhealth, connects patients in Nigeria with verified doctors for online consultations, prescriptions, investigations, medical reports, and follow-up care."
     />
     <meta
       name="keywords"
@@ -14,6 +14,8 @@
     />
     <meta name="robots" content="index, follow" />
     <meta name="author" content="SynMed Telehealth" />
+    <meta name="application-name" content="SynMed Telehealth" />
+    <meta name="publisher" content="SynMed Telehealth Ltd" />
     <link rel="canonical" href="https://synmedhealth.com/" />
     <meta name="theme-color" content="#0f766e" />
     <link rel="icon" type="image/png" href="/logo-removebg-preview.png" />
@@ -38,35 +40,60 @@
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
-        "@type": "MedicalBusiness",
-        "name": "SynMed Telehealth",
-        "alternateName": ["SynMed Health", "synmedhealth"],
-        "url": "https://synmedhealth.com/",
-        "logo": "https://synmedhealth.com/logo-removebg-preview.png",
-        "image": "https://synmedhealth.com/nigerian-doctor-tele.png",
-        "description": "SynMed Telehealth helps patients in Nigeria access verified doctors online, request prescriptions, investigations, medical reports, follow-up care, and connected health support.",
-        "areaServed": {
-          "@type": "Country",
-          "name": "Nigeria"
-        },
-        "medicalSpecialty": [
-          "PrimaryCare",
-          "Telemedicine"
-        ],
-        "sameAs": [
-          "https://t.me/SynmedTelehealth",
-          "https://wa.me/2348107840312",
-          "https://www.instagram.com/synmedtelehealth",
-          "https://www.facebook.com/share/18qQSJpBXQ/"
-        ],
-        "contactPoint": {
-          "@type": "ContactPoint",
-          "contactType": "customer support",
-          "email": "synmedtelehealth@gmail.com",
-          "telephone": "+2348107840312",
-          "areaServed": "NG",
-          "availableLanguage": ["English"]
-        }
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://synmedhealth.com/#organization",
+            "name": "SynMed Telehealth",
+            "legalName": "SynMed Telehealth Ltd",
+            "alternateName": ["SynMed Health", "synmedhealth"],
+            "url": "https://synmedhealth.com/",
+            "logo": "https://synmedhealth.com/logo-removebg-preview.png",
+            "sameAs": [
+              "https://t.me/SynmedTelehealth",
+              "https://wa.me/2348107840312",
+              "https://www.instagram.com/synmedtelehealth",
+              "https://www.facebook.com/share/18qQSJpBXQ/"
+            ],
+            "contactPoint": {
+              "@type": "ContactPoint",
+              "contactType": "customer support",
+              "email": "synmedtelehealth@gmail.com",
+              "telephone": "+2348107840312",
+              "areaServed": "NG",
+              "availableLanguage": ["English"]
+            }
+          },
+          {
+            "@type": "MedicalBusiness",
+            "@id": "https://synmedhealth.com/#medicalbusiness",
+            "name": "SynMed Telehealth",
+            "alternateName": ["SynMed Health", "synmedhealth"],
+            "url": "https://synmedhealth.com/",
+            "logo": "https://synmedhealth.com/logo-removebg-preview.png",
+            "image": "https://synmedhealth.com/nigerian-doctor-tele.png",
+            "description": "SynMed Telehealth connects patients in Nigeria with verified doctors for online consultations, prescriptions, investigations, medical reports, and follow-up care.",
+            "areaServed": {
+              "@type": "Country",
+              "name": "Nigeria"
+            },
+            "medicalSpecialty": ["PrimaryCare", "Telemedicine"],
+            "parentOrganization": {
+              "@id": "https://synmedhealth.com/#organization"
+            }
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://synmedhealth.com/#website",
+            "url": "https://synmedhealth.com/",
+            "name": "SynMed Telehealth",
+            "alternateName": ["SynMed Health", "synmedhealth"],
+            "publisher": {
+              "@id": "https://synmedhealth.com/#organization"
+            },
+            "inLanguage": "en-NG"
+          }
+        ]
       }
     </script>
   </head>

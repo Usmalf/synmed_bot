@@ -241,6 +241,19 @@ export default function LandingPage() {
         </div>
       </section>
 
+      <RevealOnScroll delay={10}>
+        <section className="landing-section landing-section--brand-intro">
+          <div className="landing-section__heading">
+            <h2>SynMed Telehealth, your online doctor service in Nigeria.</h2>
+          </div>
+          <p className="landing-brand-intro__copy">
+            SynMed Telehealth, also called SynMed Health or synmedhealth, helps patients speak with
+            verified doctors online and continue care with prescriptions, investigation requests,
+            medical reports, appointments, and follow-up support.
+          </p>
+        </section>
+      </RevealOnScroll>
+
       <RevealOnScroll delay={20}>
         <section className="landing-section landing-section--feature-grid">
         <div className="landing-section__heading">
