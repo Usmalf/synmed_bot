@@ -156,8 +156,10 @@ export default function PatientWorkspaceHomePage() {
     }
 
     loadWorkspace();
+    window.addEventListener("focus", loadWorkspace);
     return () => {
       ignore = true;
+      window.removeEventListener("focus", loadWorkspace);
     };
   }, []);
 
@@ -198,6 +200,11 @@ export default function PatientWorkspaceHomePage() {
       priority: 2,
     })),
     ...(historyState.history?.investigations || []).map((item) => ({
+      diagnosis: item.diagnosis || "",
+      created_at: item.created_at,
+      priority: 2,
+    })),
+    ...(historyState.history?.medical_reports || []).map((item) => ({
       diagnosis: item.diagnosis || "",
       created_at: item.created_at,
       priority: 2,

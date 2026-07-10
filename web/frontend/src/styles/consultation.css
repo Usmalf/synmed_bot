@@ -1680,16 +1680,48 @@ body[data-background-theme="light"] .consultation-room__sidebar .consultation-mo
     flex: 0 0 auto;
     flex-direction: column;
     gap: 0.55rem;
-    max-height: 36dvh;
+    max-height: 28dvh;
     overflow-y: auto;
     padding-right: 0;
+  }
+
+  .consultation-room__sidebar .consultation-callbar {
+    position: absolute;
+    right: 0.75rem;
+    top: 3.2rem;
+    z-index: 9;
+  }
+
+  .consultation-room__sidebar .consultation-callbar__actions {
+    align-items: flex-end;
+    display: flex;
+    flex-direction: column;
+    gap: 0.38rem;
+  }
+
+  .consultation-room__sidebar .consultation-callbar__actions .button {
+    backdrop-filter: blur(12px);
+    background: rgba(8, 29, 38, 0.58);
+    border-color: rgba(114, 216, 186, 0.24);
+    border-radius: 999px;
+    box-shadow: 0 12px 26px rgba(0, 0, 0, 0.16);
+    font-size: 0.72rem;
+    min-height: 34px;
+    padding: 0.34rem 0.58rem;
+    width: auto;
+  }
+
+  body[data-background-theme="light"] .consultation-room__sidebar .consultation-callbar__actions .button {
+    background: rgba(255, 255, 255, 0.68);
+    border-color: rgba(0, 95, 123, 0.2);
+    color: #0b2530;
   }
 
   .consultation-room__chatpane {
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
-    margin-top: 0.75rem;
+    margin-top: 0.35rem;
     min-height: 0;
   }
 
@@ -1881,10 +1913,6 @@ body[data-background-theme="light"] .consultation-room__sidebar .consultation-mo
     color: var(--color-accent);
     font-size: 0.7rem;
     font-weight: 800;
-  }
-
-  .transcript-window .transcript-document-card {
-    display: none;
   }
 
   .voice-recording-control {

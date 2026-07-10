@@ -734,6 +734,7 @@ def get_consultation_live_snapshot(reference: str) -> dict:
     return {
         "status": status,
         "transcript": get_consultation_transcript(reference),
+        "documents": get_consultation_documents(reference),
         "call": _call_payload_for_consultation(consultation_id),
     }
 
