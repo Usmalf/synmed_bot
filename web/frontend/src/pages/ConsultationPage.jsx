@@ -26,9 +26,9 @@ import "../styles/forms.css";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 const INITIAL_ROOM_MESSAGE = "Describe how you're feeling. You may begin typing below.";
 const QUEUED_ROOM_MESSAGE = "Your consultation request is queued. We will open the conversation here once a doctor joins.";
-const QUEUED_PROMPT_TITLE = "Consultation Request Submitted";
+const QUEUED_PROMPT_TITLE = "Your symptoms have been submitted";
 const QUEUED_PROMPT_MESSAGE =
-  "Your symptoms have been received and your consultation is now in the queue. Please remain on this page; a SynMed doctor will join you shortly.";
+  "You are now in the queue. Please remain on this page; a SynMed doctor will join your consultation shortly.";
 const TRANSCRIPT_PENDING_MESSAGE = "Your conversation will appear here once the consultation becomes active.";
 const SKIPPED_FEEDBACK_KEY = "synmed_skipped_feedback_consultations";
 const BACKGROUND_THEME_KEY = "synmed-background-theme";
@@ -399,9 +399,9 @@ export default function ConsultationPage() {
     const input = messageInputRef.current;
     if (!input) return;
     input.style.height = "auto";
-    const nextHeight = Math.max(48, Math.min(input.scrollHeight, 120));
+    const nextHeight = Math.max(52, Math.min(input.scrollHeight, 132));
     input.style.height = `${nextHeight}px`;
-    input.style.overflowY = input.scrollHeight > 120 ? "auto" : "hidden";
+    input.style.overflowY = input.scrollHeight > 132 ? "auto" : "hidden";
   }, [draftMessage]);
   const feedbackSectionRef = useRef(null);
   const feedbackVisibleRef = useRef(false);
@@ -2018,7 +2018,7 @@ export default function ConsultationPage() {
 
             <div className="consultation-intake-card__header">
               <span className="consultation-room__eyebrow">Consultation Access</span>
-              <h2>{roomWaitingForDoctor ? "You are in the queue" : "Tell the doctor how you feel"}</h2>
+              <h2>{roomWaitingForDoctor ? "You are in the queue" : "Tell us what you're feeling"}</h2>
               <p>{roomStatusMessage}</p>
             </div>
 
@@ -2056,8 +2056,8 @@ export default function ConsultationPage() {
               <div className="consultation-queue-overlay" aria-live="polite">
                 <div className="consultation-queue-card">
                   <BrandedLoader compact label="Waiting for doctor..." />
-                  <h3>Your symptoms have been submitted.</h3>
-                  <p>A SynMed doctor will join your consultation shortly. Please remain on this page.</p>
+                  <h3>{QUEUED_PROMPT_TITLE}</h3>
+                  <p>{QUEUED_PROMPT_MESSAGE}</p>
                 </div>
               </div>,
               document.body,

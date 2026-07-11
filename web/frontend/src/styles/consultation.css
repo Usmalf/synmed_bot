@@ -211,6 +211,22 @@
 .consultation-intake-card__header h2 {
   color: var(--color-ink);
   font-family: var(--font-display);
+  font-size: clamp(1.38rem, 1vw + 1.08rem, 1.9rem);
+  line-height: 1.12;
+  margin: 0;
+}
+
+.consultation-intake-card__header p {
+  color: var(--color-muted);
+  font-size: 0.95rem;
+  line-height: 1.55;
+  margin: 0 auto;
+  max-width: 38rem;
+}
+
+.consultation-intake-card__header h2 {
+  color: var(--color-ink);
+  font-family: var(--font-display);
   font-size: clamp(1.8rem, 4vw, 2.55rem);
   line-height: 1.04;
   margin: 0;
@@ -397,7 +413,16 @@
 .consultation-queue-card h3 {
   color: var(--color-ink);
   font-size: clamp(1.25rem, 2.2vw, 1.65rem);
-  margin: 0;
+  line-height: 1.18;
+  margin: 0.35rem auto 0;
+}
+
+.consultation-queue-card p {
+  color: var(--color-muted);
+  font-size: 0.95rem;
+  line-height: 1.55;
+  margin: 0.6rem auto 0;
+  max-width: 22rem;
 }
 
 .consultation-feedback-card__header {
@@ -785,6 +810,15 @@ body[data-background-theme="light"] .consultation-feedback-card,
 body[data-background-theme="light"] .consultation-queue-card {
   background: rgba(255, 255, 255, 0.98);
   border-color: rgba(8, 30, 40, 0.08);
+}
+
+body[data-background-theme="light"] .consultation-queue-card h3 {
+  color: #12303a;
+}
+
+body[data-background-theme="light"] .consultation-queue-card p,
+body[data-background-theme="light"] .consultation-queue-card .consultation-status__message {
+  color: #3f626f;
 }
 
 @media (max-width: 720px) {
@@ -1177,7 +1211,7 @@ body[data-background-theme="light"] .transcript-system-card .transcript-bubble__
   box-sizing: border-box;
   font-size: 0.88rem;
   line-height: 1.32;
-  max-height: 96px;
+  max-height: 120px;
   min-height: 38px;
   min-width: 0;
   overflow-y: hidden;
@@ -1440,6 +1474,28 @@ body[data-background-theme="light"] .consultation-overview--sticky {
   box-shadow: 0 18px 30px rgba(16, 59, 74, 0.08);
 }
 
+body[data-background-theme="light"] .consultation-overview__toggle {
+  background: rgba(12, 77, 95, 0.07);
+  border: 1px solid rgba(12, 77, 95, 0.12);
+  border-radius: 14px;
+  color: #12303a;
+}
+
+body[data-background-theme="light"] .consultation-overview__toggle > span:last-child {
+  color: #0c6f78;
+}
+
+body[data-background-theme="light"] .consultation-overview__identity,
+body[data-background-theme="light"] .consultation-overview__reference,
+body[data-background-theme="light"] .consultation-room__panel {
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(12, 77, 95, 0.08);
+}
+
+body[data-background-theme="light"] .consultation-room__eyebrow {
+  color: #0b7180;
+}
+
 body[data-background-theme="light"] .transcript-window {
   background:
     radial-gradient(circle at top left, rgba(243, 181, 74, 0.07), transparent 30%),
@@ -1450,11 +1506,16 @@ body[data-background-theme="light"] .transcript-window {
 
 body[data-background-theme="light"] .consultation-overview__identity h3,
 body[data-background-theme="light"] .consultation-overview__reference strong,
+body[data-background-theme="light"] .consultation-intake-card__header h2,
 body[data-background-theme="light"] .consultation-room__panel h3,
 body[data-background-theme="light"] .consultation-room__id strong,
 body[data-background-theme="light"] .transcript-document-card__copy h4,
 body[data-background-theme="light"] .transcript-bubble p {
   color: #12303a;
+}
+
+body[data-background-theme="light"] .consultation-intake-card__header p {
+  color: #3f626f;
 }
 
 body[data-background-theme="light"] .consultation-overview__identity p,
@@ -1814,8 +1875,15 @@ body[data-background-theme="light"] .consultation-room__sidebar .consultation-mo
   }
 
   .consultation-compose--initial textarea.form-field__input {
+    min-height: 56px;
+    max-height: 132px;
     overflow-wrap: anywhere;
     white-space: pre-wrap;
+  }
+
+  .consultation-compose:not(.consultation-compose--initial) textarea.form-field__input {
+    min-height: 52px;
+    max-height: 132px;
   }
 
   .form-panel.form-panel--inline.consultation-compose--recording {
