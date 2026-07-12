@@ -145,3 +145,31 @@ def telegram_payment_return(reference: str = "", trxref: str = ""):
     bot_username = (os.getenv("BOT_USERNAME") or "Synmed2_bot").strip().lstrip("@")
     payload = quote(f"paid_{payment_reference}", safe="")
     return RedirectResponse(f"https://t.me/{bot_username}?start={payload}", status_code=302)
+
+
+@router.get("/whatsapp-return")
+async def whatsapp_payment_return(reference: str = "", trxref: str = ""):
+    payment_reference = (reference or trxref or "").strip()
+    if payment_reference:
+        try:
+            await verify_web_payment(payment_reference)
+        except Exception as exc:
+            log_exception(
+                exc,
+                source="payment_whatsapp_return",
+                path="/payments/whatsapp-return",
+                method="GET",
+                status_code=502,
+            )
+
+    whatsapp_number = (
+        os.getenv("WHATSAPP_PUBLIC_PHONE_NUMBER", "").strip()
+        or os.getenv("WHATSAPP_BUSINESS_NUMBER", "").strip()
+        or os.getenv("WHATSAPP_CONTACT_NUMBER", "").strip()
+    )
+    cleaned_number = "".join(character for character in whatsapp_number if character.isdigit())
+    if not cleaned_number:
+        return RedirectResponse(build_frontend_callback_url("/signin", {"payment_reference": payment_reference}), status_code=302)
+
+    message = f"paid {payment_reference}" if payment_reference else "I have completed my SynMed payment."
+    return RedirectResponse(f"https://wa.me/{cleaned_number}?text={quote(message, safe='')}", status_code=302)

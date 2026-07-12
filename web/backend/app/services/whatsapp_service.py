@@ -67,9 +67,13 @@ COMMAND_WORDS = {
     "guide",
     "help",
     "cancel",
+    "restart",
+    "start over",
+    "startover",
     "end",
     "end chat",
 }
+RESTART_WORDS = {"hi", "hello", "hey", "menu", "start", "restart", "start over", "startover"}
 
 
 class WhatsAppConfigurationError(RuntimeError):
@@ -110,6 +114,24 @@ def build_basic_menu(name: str = "") -> str:
 
 def _frontend_base_url() -> str:
     return os.getenv("FRONTEND_BASE_URL", "").strip().rstrip("/") or "https://synmedhealth.com"
+
+
+def _backend_public_url() -> str:
+    return (
+        os.getenv("BACKEND_PUBLIC_URL", "").strip().rstrip("/")
+        or os.getenv("API_BASE_URL", "").strip().rstrip("/")
+        or os.getenv("VITE_API_BASE_URL", "").strip().rstrip("/")
+        or _frontend_base_url()
+    )
+
+
+def _absolute_public_url(path_or_url: str | None) -> str:
+    value = (path_or_url or "").strip()
+    if not value:
+        return ""
+    if value.lower().startswith(("http://", "https://")):
+        return value
+    return f"{_backend_public_url()}/{value.lstrip('/')}"
 
 
 def _digits(value: str) -> str:
@@ -222,6 +244,14 @@ def _cancel_whatsapp_flow(whatsapp_id: str) -> str:
             end_chat(patient["id"])
     _clear_session(whatsapp_id)
     return "Current WhatsApp consultation process cancelled.\n\n" + build_basic_menu()
+
+
+def _wrong_step_reply(expected: str) -> str:
+    return (
+        "That response does not match this step.\n\n"
+        f"{expected}\n\n"
+        "You can reply start to begin again, or cancel to stop this process."
+    )
 
 
 def _lookup_patient_from_phone(whatsapp_id: str) -> dict | None:
@@ -416,8 +446,8 @@ async def _initialize_whatsapp_payment(
     if registration:
         metadata["registration_payload_json"] = json.dumps(registration)
     callback_url = build_backend_callback_url(
-        "/payments/web-return",
-        {"callback_path": "/signin"},
+        "/payments/whatsapp-return",
+        {"reference": reference},
     ) or build_frontend_callback_url(
         "/signin",
         {"payment_reference": reference, "reference": reference, "status": "success"},
@@ -468,21 +498,21 @@ async def _continue_registration(session: dict, text: str) -> str:
 
     if state == "register_name":
         if len(value) < 3:
-            return "Please enter your full name."
+            return _wrong_step_reply("Please type your full name.")
         payload["name"] = value
         _save_session(whatsapp_id, "register_age", payload, session.get("name", ""))
         return "How old are you? Reply with your age in years."
 
     if state == "register_age":
         if not value.isdigit() or not (0 < int(value) < 130):
-            return "Please enter a valid age in years."
+            return _wrong_step_reply("Please enter a valid age in years, for example: 34.")
         payload["age"] = int(value)
         _save_session(whatsapp_id, "register_gender", payload, session.get("name", ""))
         return "What is your gender? Reply Male, Female, or your preferred description."
 
     if state == "register_gender":
         if len(value) < 2:
-            return "Please enter your gender."
+            return _wrong_step_reply("Please enter your gender, for example: Male or Female.")
         payload["gender"] = value
         _save_session(whatsapp_id, "register_email", payload, session.get("name", ""))
         return "Please enter your email address. We will use it for receipts, documents, and web access."
@@ -490,7 +520,7 @@ async def _continue_registration(session: dict, text: str) -> str:
     if state == "register_email":
         email = value.lower()
         if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
-            return "Please enter a valid email address."
+            return _wrong_step_reply("Please enter a valid email address, for example: patient@example.com.")
         if get_patient_by_identifier(email):
             _clear_session(whatsapp_id)
             return (
@@ -503,7 +533,7 @@ async def _continue_registration(session: dict, text: str) -> str:
 
     if state == "register_address":
         if len(value) < 2:
-            return "Please enter your address or city."
+            return _wrong_step_reply("Please enter your address or city.")
         payload["address"] = value
         _save_session(whatsapp_id, "register_allergy", payload, session.get("name", ""))
         return "Do you have any allergies? Reply none if you do not."
@@ -752,7 +782,12 @@ async def _relay_patient_chat_message(whatsapp_id: str, message_text: str) -> st
     return ""
 
 
-async def send_patient_document_notice(patient: dict | None, document_kind: str) -> bool:
+async def send_patient_document_notice(
+    patient: dict | None,
+    document_kind: str,
+    document_url: str = "",
+    filename: str = "",
+) -> bool:
     recipient = _whatsapp_recipient_from_patient(patient)
     if not recipient or not is_configured():
         return False
@@ -761,12 +796,24 @@ async def send_patient_document_notice(patient: dict | None, document_kind: str)
         "investigation": "investigation request",
         "medical_report": "medical report",
     }.get(document_kind, "clinical document")
-    message = (
-        f"Your SynMed {label} is ready.\n\n"
-        "For privacy, please sign in to your SynMed dashboard to view or download it securely:\n"
-        f"{_frontend_base_url()}/patient/documents"
+    direct_url = _absolute_public_url(document_url)
+    if direct_url:
+        await send_document_message(
+            recipient,
+            direct_url,
+            filename or f"synmed-{document_kind.replace('_', '-')}.pdf",
+            f"Your SynMed {label} is ready.",
+        )
+        return True
+
+    await send_text_message(
+        recipient,
+        (
+            f"Your SynMed {label} is ready.\n\n"
+            "Open this direct document link:\n"
+            f"{_frontend_base_url()}/patient/documents"
+        ),
     )
-    await send_text_message(recipient, message)
     return True
 
 
@@ -830,6 +877,10 @@ async def build_whatsapp_reply(message_text: str, name: str = "", sender: str = 
         return _cancel_whatsapp_flow(sender)
 
     patient, active_consultation = _active_consultation_for_whatsapp(sender)
+    if session and not active_consultation and normalized in RESTART_WORDS:
+        _clear_session(sender)
+        return "No problem. I have restarted the WhatsApp flow.\n\n" + build_basic_menu(name)
+
     if active_consultation and normalized in {"end", "end chat"}:
         end_chat(patient["id"])
         _clear_session(sender)
@@ -837,12 +888,20 @@ async def build_whatsapp_reply(message_text: str, name: str = "", sender: str = 
     if active_consultation and normalized not in COMMAND_WORDS and not normalized.startswith("paid"):
         return await _relay_patient_chat_message(sender, message_text)
 
-    if normalized in {"hi", "hello", "hey", "menu", "start"}:
+    if normalized in RESTART_WORDS:
         return build_basic_menu(name)
     if session and session["state"].startswith("register_"):
         return await _continue_registration(session, message_text)
     if session and session["state"] == "awaiting_symptoms" and normalized not in COMMAND_WORDS and not normalized.startswith("paid"):
         return await _queue_whatsapp_consultation(sender, message_text, session, name)
+    if session and session["state"] == "awaiting_payment" and not normalized.startswith("paid"):
+        reference = (session.get("payload") or {}).get("reference") or (session.get("payload") or {}).get("payment_reference") or ""
+        expected = (
+            f"Please complete your Paystack payment, then reply: paid {reference}"
+            if reference
+            else "Please complete your Paystack payment, then reply with paid followed by your payment reference."
+        )
+        return _wrong_step_reply(expected)
     if session and session["state"] == "queued" and normalized not in COMMAND_WORDS:
         return (
             "You are still in the doctor queue. A SynMed doctor will join as soon as one is available.\n\n"
@@ -877,6 +936,37 @@ async def send_text_message(to: str, message: str) -> dict:
         "to": to,
         "type": "text",
         "text": {"preview_url": True, "body": message},
+    }
+    async with httpx.AsyncClient(timeout=20) as client:
+        response = await client.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+    response.raise_for_status()
+    return response.json()
+
+
+async def send_document_message(to: str, document_url: str, filename: str, caption: str = "") -> dict:
+    token = _access_token()
+    phone_number_id = _phone_number_id()
+    if not token or not phone_number_id:
+        raise WhatsAppConfigurationError("WhatsApp access token or phone number ID is not configured.")
+
+    url = f"https://graph.facebook.com/{WHATSAPP_API_VERSION}/{phone_number_id}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to,
+        "type": "document",
+        "document": {
+            "link": document_url,
+            "filename": filename or "synmed-document.pdf",
+            "caption": caption,
+        },
     }
     async with httpx.AsyncClient(timeout=20) as client:
         response = await client.post(

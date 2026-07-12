@@ -92,9 +92,14 @@ async def _send_telegram_document(chat_id: int, *, filename: str, content: bytes
     return True
 
 
-async def _send_whatsapp_document_notice(patient_details: dict, document_kind: str) -> bool:
+async def _send_whatsapp_document_notice(patient_details: dict, document_kind: str, document: dict | None = None) -> bool:
     try:
-        return await send_patient_document_notice(patient_details, document_kind)
+        return await send_patient_document_notice(
+            patient_details,
+            document_kind,
+            (document or {}).get("asset_url") or "",
+            (document or {}).get("filename") or "",
+        )
     except Exception:
         return False
 
@@ -1056,7 +1061,7 @@ async def create_doctor_prescription(
             )
         except Exception:
             delivered = False
-    whatsapp_delivered = await _send_whatsapp_document_notice(patient_details, "prescription")
+    whatsapp_delivered = await _send_whatsapp_document_notice(patient_details, "prescription", document)
     delivered_to_patient = delivered or whatsapp_delivered
 
     return {
@@ -1120,7 +1125,7 @@ async def create_doctor_investigation(
             )
         except Exception:
             delivered = False
-    whatsapp_delivered = await _send_whatsapp_document_notice(patient_details, "investigation")
+    whatsapp_delivered = await _send_whatsapp_document_notice(patient_details, "investigation", document)
     delivered_to_patient = delivered or whatsapp_delivered
 
     return {
@@ -1204,7 +1209,7 @@ async def create_doctor_medical_report(
             )
         except Exception:
             delivered = False
-    whatsapp_delivered = await _send_whatsapp_document_notice(patient_details, "medical_report")
+    whatsapp_delivered = await _send_whatsapp_document_notice(patient_details, "medical_report", document)
     delivered_to_patient = delivered or email_delivered or whatsapp_delivered
 
     return {

@@ -45,6 +45,7 @@ import synmed_utils.support_registry as support_registry
 from web.backend.app.services.doctor_app_service import send_doctor_message
 from web.backend.app.services.payment_app_service import verify_web_payment
 from web.backend.app.services.whatsapp_service import build_keyword_reply, build_whatsapp_reply, send_patient_document_notice
+from web.backend.app.routes.payments import whatsapp_payment_return
 
 
 class TestPersistenceStores(unittest.TestCase):
@@ -140,7 +141,7 @@ class TestPersistenceStores(unittest.TestCase):
         self.assertIn("setup link", reply)
         self.assertIn("email", reply)
 
-    def test_whatsapp_document_notice_points_to_secure_patient_documents(self):
+    def test_whatsapp_document_notice_sends_direct_document_link(self):
         patient = register_patient(
             telegram_id=None,
             name="Document Patient",
@@ -158,15 +159,26 @@ class TestPersistenceStores(unittest.TestCase):
         self.addCleanup(lambda: os.environ.pop("WHATSAPP_PHONE_NUMBER_ID", None))
         self.addCleanup(lambda: os.environ.pop("FRONTEND_BASE_URL", None))
 
-        with patch("web.backend.app.services.whatsapp_service.send_text_message", new_callable=AsyncMock) as mocked_send:
-            delivered = asyncio.run(send_patient_document_notice(patient, "prescription"))
+        os.environ["BACKEND_PUBLIC_URL"] = "https://api.synmedhealth.com"
+        self.addCleanup(lambda: os.environ.pop("BACKEND_PUBLIC_URL", None))
+
+        with patch("web.backend.app.services.whatsapp_service.send_document_message", new_callable=AsyncMock) as mocked_send:
+            delivered = asyncio.run(
+                send_patient_document_notice(
+                    patient,
+                    "prescription",
+                    "/generated-documents/synmed_prescription_test.pdf",
+                    "synmed_prescription_test.pdf",
+                )
+            )
 
         self.assertTrue(delivered)
         mocked_send.assert_awaited_once()
-        recipient, body = mocked_send.await_args.args
+        recipient, document_url, filename, caption = mocked_send.await_args.args
         self.assertEqual(recipient, "2348107840312")
-        self.assertIn("prescription is ready", body)
-        self.assertIn("https://synmedhealth.com/patient/documents", body)
+        self.assertEqual(document_url, "https://api.synmedhealth.com/generated-documents/synmed_prescription_test.pdf")
+        self.assertEqual(filename, "synmed_prescription_test.pdf")
+        self.assertIn("prescription is ready", caption)
 
     def test_whatsapp_patient_can_queue_consultation_with_active_payment(self):
         patient = register_patient(
@@ -266,6 +278,56 @@ class TestPersistenceStores(unittest.TestCase):
             session = cursor.fetchone()
         self.assertEqual(session["state"], "awaiting_symptoms")
         self.assertIn("wa-auto-paid", session["payload_json"])
+
+    def test_whatsapp_payment_return_redirects_to_whatsapp(self):
+        os.environ["WHATSAPP_PUBLIC_PHONE_NUMBER"] = "2348107840312"
+        self.addCleanup(lambda: os.environ.pop("WHATSAPP_PUBLIC_PHONE_NUMBER", None))
+
+        with patch("web.backend.app.routes.payments.verify_web_payment", new_callable=AsyncMock) as mocked_verify:
+            response = asyncio.run(whatsapp_payment_return(reference="wa-return-test"))
+
+        mocked_verify.assert_awaited_once_with("wa-return-test")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("https://wa.me/2348107840312", response.headers["location"])
+        self.assertIn("paid%20wa-return-test", response.headers["location"])
+
+    def test_whatsapp_wrong_registration_response_keeps_step_and_start_resets(self):
+        timestamp = datetime.now(timezone.utc).isoformat()
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO whatsapp_sessions (whatsapp_id, name, state, payload_json, updated_at, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "2348107840312",
+                    "WhatsApp User",
+                    "register_age",
+                    json.dumps({"phone": "08107840312", "name": "WhatsApp User"}),
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            conn.commit()
+
+        wrong_reply = asyncio.run(build_whatsapp_reply("not my age", name="WhatsApp User", sender="2348107840312"))
+        self.assertIn("does not match this step", wrong_reply)
+        self.assertIn("valid age", wrong_reply)
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT state FROM whatsapp_sessions WHERE whatsapp_id = ?", ("2348107840312",))
+            session = cursor.fetchone()
+        self.assertEqual(session["state"], "register_age")
+
+        restart_reply = asyncio.run(build_whatsapp_reply("start", name="WhatsApp User", sender="2348107840312"))
+        self.assertIn("restarted", restart_reply)
+        self.assertIn("Welcome to SynMed Telehealth", restart_reply)
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT state FROM whatsapp_sessions WHERE whatsapp_id = ?", ("2348107840312",))
+            session = cursor.fetchone()
+        self.assertIsNone(session)
 
     def test_doctor_web_message_is_delivered_to_whatsapp_patient(self):
         patient = register_patient(
