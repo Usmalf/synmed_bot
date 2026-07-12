@@ -1,5 +1,6 @@
 import os
 import asyncio
+import json
 import tempfile
 import unittest
 import zipfile
@@ -35,12 +36,15 @@ from services.patient_records import (
     search_patient_records,
     update_patient_record,
 )
+from services.paystack import create_payment_record, mark_payment_verified
 from synmed_utils.doctor_profiles import create_or_update_profile, doctor_profiles
-from synmed_utils.active_chats import active_chats, last_consultation, start_chat
+from synmed_utils.active_chats import active_chats, clear_runtime_state, last_consultation, start_chat
 import synmed_utils.doctor_registry as doctor_registry
 from synmed_utils.pending_doctors import pending_doctors
 import synmed_utils.support_registry as support_registry
-from web.backend.app.services.whatsapp_service import build_keyword_reply, send_patient_document_notice
+from web.backend.app.services.doctor_app_service import send_doctor_message
+from web.backend.app.services.payment_app_service import verify_web_payment
+from web.backend.app.services.whatsapp_service import build_keyword_reply, build_whatsapp_reply, send_patient_document_notice
 
 
 class TestPersistenceStores(unittest.TestCase):
@@ -49,8 +53,12 @@ class TestPersistenceStores(unittest.TestCase):
         os.close(handle)
         os.environ["DATABASE_PATH"] = self.db_path
         init_db()
+        clear_runtime_state()
+        doctor_registry.clear_doctor_runtime_state()
 
     def tearDown(self):
+        clear_runtime_state()
+        doctor_registry.clear_doctor_runtime_state()
         os.environ.pop("DATABASE_PATH", None)
         try:
             os.remove(self.db_path)
@@ -159,6 +167,143 @@ class TestPersistenceStores(unittest.TestCase):
         self.assertEqual(recipient, "2348107840312")
         self.assertIn("prescription is ready", body)
         self.assertIn("https://synmedhealth.com/patient/documents", body)
+
+    def test_whatsapp_patient_can_queue_consultation_with_active_payment(self):
+        patient = register_patient(
+            telegram_id=None,
+            name="WhatsApp Queue Patient",
+            age="30",
+            gender="Female",
+            phone="08107840312",
+            email="queue.patient@example.com",
+            address="Lagos",
+            allergy="",
+        )
+        create_payment_record(
+            reference="wa-test-queue",
+            telegram_id=0,
+            patient_id=patient["hospital_number"],
+            email=patient["email"],
+            amount=2000,
+            currency="NGN",
+            patient_type="returning",
+            label="SynMed Consultation Fee",
+        )
+        mark_payment_verified("wa-test-queue", paystack_status="success", patient_id=patient["hospital_number"])
+
+        start_reply = asyncio.run(build_whatsapp_reply("2", name="Queue Patient", sender="2348107840312"))
+        self.assertIn("active consultation payment", start_reply)
+        self.assertIn("describe your symptoms", start_reply)
+
+        queue_reply = asyncio.run(build_whatsapp_reply("I have fever and headache", name="Queue Patient", sender="2348107840312"))
+        self.assertIn("doctor queue", queue_reply)
+        self.assertIn(patient["id"], doctor_registry.waiting_patients)
+        queued = doctor_registry.pending_patient_details[patient["id"]]
+        self.assertEqual(queued["channel"], "whatsapp")
+        self.assertEqual(queued["source"], "web")
+        self.assertEqual(queued["whatsapp_id"], "2348107840312")
+
+    def test_web_payment_verification_auto_prompts_whatsapp_patient(self):
+        patient = register_patient(
+            telegram_id=None,
+            name="WhatsApp Paid Patient",
+            age="37",
+            gender="Female",
+            phone="08107840312",
+            email="paid.patient@example.com",
+            address="Lagos",
+            allergy="",
+        )
+        create_payment_record(
+            reference="wa-auto-paid",
+            telegram_id=0,
+            patient_id=patient["hospital_number"],
+            email=patient["email"],
+            amount=2000,
+            currency="NGN",
+            patient_type="returning",
+            label="SynMed Consultation Fee",
+        )
+        timestamp = datetime.now(timezone.utc).isoformat()
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO whatsapp_sessions (whatsapp_id, name, state, payload_json, updated_at, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "2348107840312",
+                    "WhatsApp Paid Patient",
+                    "awaiting_payment",
+                    json.dumps({"patient_id": patient["hospital_number"], "reference": "wa-auto-paid"}),
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            conn.commit()
+
+        with (
+            patch(
+                "web.backend.app.services.payment_app_service.verify_transaction",
+                new_callable=AsyncMock,
+                return_value={"status": "success", "amount": 200000, "currency": "NGN"},
+            ),
+            patch("web.backend.app.services.whatsapp_service.is_configured", return_value=True),
+            patch("web.backend.app.services.whatsapp_service.send_text_message", new_callable=AsyncMock) as mocked_send,
+        ):
+            result = asyncio.run(verify_web_payment("wa-auto-paid"))
+
+        self.assertTrue(result["verified"])
+        mocked_send.assert_awaited_once()
+        recipient, body = mocked_send.await_args.args
+        self.assertEqual(recipient, "2348107840312")
+        self.assertIn("Payment verified", body)
+        self.assertIn("describe your symptoms", body)
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT state, payload_json FROM whatsapp_sessions WHERE whatsapp_id = ?", ("2348107840312",))
+            session = cursor.fetchone()
+        self.assertEqual(session["state"], "awaiting_symptoms")
+        self.assertIn("wa-auto-paid", session["payload_json"])
+
+    def test_doctor_web_message_is_delivered_to_whatsapp_patient(self):
+        patient = register_patient(
+            telegram_id=None,
+            name="WhatsApp Chat Patient",
+            age="39",
+            gender="Male",
+            phone="08107840312",
+            email="chat.patient@example.com",
+            address="Lagos",
+            allergy="",
+        )
+        doctor_id = 90001
+        doctor_registry.set_doctor_busy(doctor_id, channel="web")
+        start_chat(
+            patient["id"],
+            doctor_id,
+            {
+                "reference": "wa-chat-ref",
+                "hospital_number": patient["hospital_number"],
+                "name": patient["name"],
+                "age": str(patient["age"]),
+                "gender": patient["gender"],
+                "phone": patient["phone"],
+                "address": patient["address"],
+                "allergy": patient["allergy"],
+                "history": "Cough",
+                "source": "web",
+                "channel": "whatsapp",
+                "whatsapp_id": "2348107840312",
+            },
+        )
+
+        with patch("web.backend.app.services.doctor_app_service.send_text_message", new_callable=AsyncMock) as mocked_send:
+            result = asyncio.run(send_doctor_message(doctor_id, "Please take your temperature."))
+
+        self.assertTrue(result["sent"])
+        mocked_send.assert_awaited_once_with("2348107840312", "Please take your temperature.")
 
     def test_doctor_profile_is_persisted_and_updated(self):
         create_or_update_profile(

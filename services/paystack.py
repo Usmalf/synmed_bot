@@ -1,5 +1,7 @@
 import os
 import json
+import hashlib
+import hmac
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 from uuid import uuid4
@@ -81,6 +83,15 @@ def build_backend_callback_url(path: str, params: dict | None = None) -> str:
     if clean_params:
         url = f"{url}?{urlencode(clean_params)}"
     return url
+
+
+def verify_paystack_webhook_signature(raw_body: bytes, signature: str | None) -> bool:
+    secret = os.getenv("PAYSTACK_SECRET_KEY", "").strip()
+    received = (signature or "").strip()
+    if not secret or not received:
+        return False
+    digest = hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha512).hexdigest()
+    return hmac.compare_digest(digest, received)
 
 
 def create_payment_reference(prefix: str = "synmed") -> str:

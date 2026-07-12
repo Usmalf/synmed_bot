@@ -389,6 +389,17 @@ def init_db():
     """)
 
     cursor.execute("""
+    CREATE TABLE IF NOT EXISTS whatsapp_sessions (
+        whatsapp_id TEXT PRIMARY KEY,
+        name TEXT,
+        state TEXT NOT NULL,
+        payload_json TEXT,
+        updated_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )
+    """)
+
+    cursor.execute("""
     CREATE TABLE IF NOT EXISTS consultations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         consultation_id TEXT UNIQUE,

@@ -36,7 +36,7 @@ from synmed_utils.doctor_profiles import format_doctor_intro
 from synmed_utils.verified_doctors import is_verified
 from .auth_service import hash_patient_password, send_email_with_attachment, send_plain_email
 from .medical_report_app_service import list_doctor_medical_report_requests
-from .whatsapp_service import send_patient_document_notice
+from .whatsapp_service import send_patient_document_notice, send_text_message, send_text_message_sync
 
 
 UTC = timezone.utc
@@ -154,7 +154,7 @@ def _queue_payload() -> list[dict]:
                 "summary": "Patient details will open after assignment.",
                 "age": details.get("age") or "N/A",
                 "emergency": bool(details.get("emergency_flag")),
-                "source": details.get("source") or "telegram",
+                "source": details.get("channel") or details.get("source") or "telegram",
             }
         )
     return items
@@ -184,7 +184,7 @@ def _active_consultation_payload(doctor_id: int) -> dict | None:
         "medical_conditions": details.get("medical_conditions") or "None recorded",
         "summary": details.get("history") or "No symptoms recorded",
         "saved_history": details.get("history") or "No symptoms recorded",
-        "source": details.get("source") or "telegram",
+        "source": details.get("channel") or details.get("source") or "telegram",
         "emergency": bool(details.get("emergency_flag")),
     }
 
@@ -206,7 +206,7 @@ def _active_consultation_payload_from_consultation(consultation: dict | None) ->
         "medical_conditions": details.get("medical_conditions") or "None recorded",
         "summary": details.get("history") or "No symptoms recorded",
         "saved_history": details.get("history") or "No symptoms recorded",
-        "source": details.get("source") or "telegram",
+        "source": details.get("channel") or details.get("source") or "telegram",
         "emergency": bool(details.get("emergency_flag")),
     }
 
@@ -243,7 +243,9 @@ def _doctor_connect_blocked_response(doctor_id: int, message: str, details: dict
 
 def _doctor_notice_text(patient_details: dict) -> str:
     source_note = (
-        "\nThis patient is consulting via SynMed Web. Reply here in the web doctor room and the patient will see your messages there."
+        "\nThis patient is consulting via WhatsApp. Reply here in the web doctor room and the patient will receive your messages on WhatsApp."
+        if patient_details.get("channel") == "whatsapp"
+        else "\nThis patient is consulting via SynMed Web. Reply here in the web doctor room and the patient will see your messages there."
         if patient_details.get("source") == "web"
         else ""
     )
@@ -587,6 +589,14 @@ def connect_doctor_to_selected_patient(doctor_id: int, runtime_patient_id: int) 
         )
 
     registry.remove_patient_from_queue(runtime_patient_id)
+    if patient_details.get("channel") == "whatsapp" and patient_details.get("whatsapp_id"):
+        try:
+            send_text_message_sync(
+                patient_details["whatsapp_id"],
+                "A SynMed doctor has joined your consultation. You can now continue chatting here on WhatsApp.",
+            )
+        except Exception:
+            pass
     active_consultation = _active_consultation_payload_from_consultation(
         {
             "consultation_id": consultation_id,
@@ -643,7 +653,12 @@ async def send_doctor_message(doctor_id: int, message_text: str) -> dict:
     )
     await realtime_hub.broadcast_message(consultation_id, message)
 
-    if patient_details.get("source") != "web":
+    if patient_details.get("channel") == "whatsapp" and patient_details.get("whatsapp_id"):
+        try:
+            await send_text_message(patient_details["whatsapp_id"], message_text.strip())
+        except Exception:
+            pass
+    elif patient_details.get("source") != "web":
         try:
             await _send_telegram_message(patient_runtime_id, message_text.strip())
         except Exception:
@@ -827,7 +842,12 @@ async def end_doctor_chat(doctor_id: int) -> dict:
     end_chat(doctor_id)
     registry.remove_doctor_from_runtime(doctor_id, channel="web")
 
-    if patient_details.get("source") != "web":
+    if patient_details.get("channel") == "whatsapp" and patient_details.get("whatsapp_id"):
+        try:
+            await send_text_message(patient_details["whatsapp_id"], "The consultation has ended. Thank you for using SynMed Telehealth.")
+        except Exception:
+            pass
+    elif patient_details.get("source") != "web":
         try:
             await _send_telegram_message(patient_id, "The consultation has ended.")
         except Exception:

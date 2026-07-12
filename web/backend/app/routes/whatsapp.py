@@ -6,7 +6,7 @@ from fastapi.responses import PlainTextResponse
 from services.operational_errors import log_exception, log_operational_error
 from ..services.whatsapp_service import (
     WhatsAppConfigurationError,
-    build_keyword_reply,
+    build_whatsapp_reply,
     send_text_message,
 )
 
@@ -106,9 +106,10 @@ async def receive_whatsapp_webhook(request: Request):
     reply_count = 0
     for message in text_messages:
         try:
-            reply = build_keyword_reply(message["text"], message.get("name", ""), message.get("from", ""))
-            await send_text_message(message["from"], reply)
-            reply_count += 1
+            reply = await build_whatsapp_reply(message["text"], message.get("name", ""), message.get("from", ""))
+            if reply:
+                await send_text_message(message["from"], reply)
+                reply_count += 1
         except WhatsAppConfigurationError as exc:
             log_exception(
                 exc,

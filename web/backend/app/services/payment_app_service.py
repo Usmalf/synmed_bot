@@ -18,6 +18,7 @@ from services.paystack import (
 from services.patient_records import get_patient_by_identifier, register_patient, update_patient_record
 from .auth_service import hash_patient_password, send_patient_email_verification
 from .settings_service import get_payment_settings
+from .whatsapp_service import notify_whatsapp_payment_verified
 
 
 PAYSTACK_CURRENCY = os.getenv("PAYSTACK_CURRENCY", "NGN")
@@ -286,6 +287,10 @@ async def verify_web_payment(reference: str) -> dict:
         paystack_status=paystack_status,
         patient_id=payment_patient_id or None,
     )
+    try:
+        await notify_whatsapp_payment_verified(reference, patient)
+    except Exception:
+        pass
 
     return {
         "verified": True,

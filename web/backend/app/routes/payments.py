@@ -1,11 +1,12 @@
 import os
+import json
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
 from services.operational_errors import log_exception
-from services.paystack import PaystackError, build_frontend_callback_url
+from services.paystack import PaystackError, build_frontend_callback_url, verify_paystack_webhook_signature
 
 from ..deps import require_patient
 from ..schemas.payment import (
@@ -50,6 +51,44 @@ async def verify_payment(reference: str):
         return await verify_web_payment(reference)
     except PaystackError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/paystack-webhook")
+async def paystack_webhook(request: Request):
+    raw_body = await request.body()
+    signature = request.headers.get("x-paystack-signature")
+    if not verify_paystack_webhook_signature(raw_body, signature):
+        raise HTTPException(status_code=401, detail="Invalid Paystack webhook signature.")
+
+    try:
+        payload = json.loads(raw_body.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Invalid Paystack webhook payload.") from exc
+
+    event_type = str(payload.get("event") or "").strip().lower()
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    reference = str(data.get("reference") or "").strip()
+    if event_type != "charge.success" or not reference:
+        return {"received": True, "processed": False, "reference": reference or None}
+
+    try:
+        result = await verify_web_payment(reference)
+    except Exception as exc:
+        log_exception(
+            exc,
+            source="payment_webhook_verification",
+            path="/payments/paystack-webhook",
+            method="POST",
+            status_code=502,
+        )
+        return {"received": True, "processed": False, "reference": reference, "error": "verification_failed"}
+
+    return {
+        "received": True,
+        "processed": bool(result.get("verified")),
+        "reference": reference,
+        "status": result.get("paystack_status"),
+    }
 
 
 @router.get("/web-return")
