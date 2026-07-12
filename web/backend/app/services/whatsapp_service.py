@@ -255,9 +255,10 @@ def build_keyword_reply(message_text: str, name: str = "", sender: str = "") -> 
         patient = _lookup_patient_from_phone(sender)
         patient_line = f" I found your record as {patient['name']} ({patient['hospital_number']})." if patient else ""
         return (
-            f"To start a consultation, please open SynMed and continue from your patient dashboard.{patient_line}\n"
+            f"To start your consultation, please continue securely from your SynMed patient dashboard.{patient_line}\n\n"
             f"{_frontend_base_url()}/signin\n\n"
-            "We will add full WhatsApp consultation payments and queueing soon."
+            "After signing in, tap Start Consultation, complete payment if requested, and submit your symptoms. "
+            "A verified doctor will join your consultation as soon as one is available."
         )
     if normalized in {"3", "payment", "pay", "payment support"}:
         return (
