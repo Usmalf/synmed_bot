@@ -36,6 +36,7 @@ from synmed_utils.doctor_profiles import format_doctor_intro
 from synmed_utils.verified_doctors import is_verified
 from .auth_service import hash_patient_password, send_email_with_attachment, send_plain_email
 from .medical_report_app_service import list_doctor_medical_report_requests
+from .whatsapp_service import send_patient_document_notice
 
 
 UTC = timezone.utc
@@ -89,6 +90,13 @@ async def _send_telegram_document(chat_id: int, *, filename: str, content: bytes
         )
     response.raise_for_status()
     return True
+
+
+async def _send_whatsapp_document_notice(patient_details: dict, document_kind: str) -> bool:
+    try:
+        return await send_patient_document_notice(patient_details, document_kind)
+    except Exception:
+        return False
 
 
 def _doctor_payload(doctor_id: int) -> dict:
@@ -1028,19 +1036,21 @@ async def create_doctor_prescription(
             )
         except Exception:
             delivered = False
+    whatsapp_delivered = await _send_whatsapp_document_notice(patient_details, "prescription")
+    delivered_to_patient = delivered or whatsapp_delivered
 
     return {
         "created": True,
         "message": (
             "Prescription created and sent to the patient."
-            if delivered
+            if delivered_to_patient
             else "Prescription created successfully."
         ),
         "consultation_id": consultation["consultation_id"],
         "filename": document["filename"],
         "asset_url": document["asset_url"],
         "asset_type": document["asset_type"],
-        "delivered_to_patient": delivered,
+        "delivered_to_patient": delivered_to_patient,
         "document_kind": "prescription",
         "preview_text": document["content"],
     }
@@ -1090,19 +1100,21 @@ async def create_doctor_investigation(
             )
         except Exception:
             delivered = False
+    whatsapp_delivered = await _send_whatsapp_document_notice(patient_details, "investigation")
+    delivered_to_patient = delivered or whatsapp_delivered
 
     return {
         "created": True,
         "message": (
             "Investigation request created and sent to the patient."
-            if delivered
+            if delivered_to_patient
             else "Investigation request created successfully."
         ),
         "consultation_id": consultation["consultation_id"],
         "filename": document["filename"],
         "asset_url": document["asset_url"],
         "asset_type": document["asset_type"],
-        "delivered_to_patient": delivered,
+        "delivered_to_patient": delivered_to_patient,
         "document_kind": "investigation",
         "preview_text": document["content"],
     }
@@ -1172,12 +1184,14 @@ async def create_doctor_medical_report(
             )
         except Exception:
             delivered = False
+    whatsapp_delivered = await _send_whatsapp_document_notice(patient_details, "medical_report")
+    delivered_to_patient = delivered or email_delivered or whatsapp_delivered
 
     return {
         "created": True,
         "message": (
             "Medical report created and sent to the patient."
-            if delivered
+            if delivered_to_patient
             else "Medical report created and emailed to the patient."
             if email_delivered
             else "Medical report created successfully. It is available in the patient's documents."
@@ -1188,7 +1202,7 @@ async def create_doctor_medical_report(
         "filename": document["filename"],
         "asset_url": document["asset_url"],
         "asset_type": document["asset_type"],
-        "delivered_to_patient": delivered or email_delivered,
+        "delivered_to_patient": delivered_to_patient,
         "document_kind": "medical_report",
         "preview_text": document["content"],
     }

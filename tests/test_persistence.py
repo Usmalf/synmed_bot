@@ -1,11 +1,13 @@
 import os
+import asyncio
 import tempfile
 import unittest
 import zipfile
 from pathlib import Path
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, patch
 
-from database import PostgresCursor, init_db
+from database import PostgresCursor, get_connection, init_db
 from services.admin_audit import get_recent_admin_actions, log_admin_action
 from services.analytics import get_admin_analytics
 from services import storage_service
@@ -38,6 +40,7 @@ from synmed_utils.active_chats import active_chats, last_consultation, start_cha
 import synmed_utils.doctor_registry as doctor_registry
 from synmed_utils.pending_doctors import pending_doctors
 import synmed_utils.support_registry as support_registry
+from web.backend.app.services.whatsapp_service import build_keyword_reply, send_patient_document_notice
 
 
 class TestPersistenceStores(unittest.TestCase):
@@ -73,6 +76,89 @@ class TestPersistenceStores(unittest.TestCase):
 
         self.assertIn("%s = '%%'", converted)
         self.assertIn("name LIKE '%%' || %s || '%%'", converted)
+
+    def test_whatsapp_reply_can_find_patient_and_open_support_ticket(self):
+        patient = register_patient(
+            telegram_id=None,
+            name="WhatsApp Patient",
+            age="28",
+            gender="Male",
+            phone="08107840312",
+            email="whatsapp.patient@example.com",
+            address="Abuja",
+            allergy="",
+        )
+
+        record_reply = build_keyword_reply(f"record {patient['hospital_number']}", sender="2348107840312")
+        self.assertIn(patient["hospital_number"], record_reply)
+        self.assertIn("WhatsApp Patient", record_reply)
+
+        support_reply = build_keyword_reply("agent please help with payment", name="WhatsApp Patient", sender="2348107840312")
+        self.assertIn("Support ticket SUP-", support_reply)
+        self.assertIn("support queue", support_reply)
+
+        web_reply = build_keyword_reply("continue on web", sender="2348107840312")
+        self.assertIn("https://synmedhealth.com/signin", web_reply)
+        self.assertIn(patient["hospital_number"], web_reply)
+
+        guide_reply = build_keyword_reply("WhatsApp guide", sender="2348107840312")
+        self.assertIn("How to use SynMed on WhatsApp", guide_reply)
+        self.assertIn("Reply 2", guide_reply)
+
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT patient_id, topic, status, summary FROM support_tickets ORDER BY created_at DESC LIMIT 1")
+            ticket = cursor.fetchone()
+        self.assertEqual(ticket["patient_id"], patient["hospital_number"])
+        self.assertEqual(ticket["topic"], "whatsapp")
+        self.assertEqual(ticket["status"], "open")
+        self.assertIn("WhatsApp sender: 2348107840312", ticket["summary"])
+
+    def test_whatsapp_can_send_web_setup_link_for_existing_patient(self):
+        patient = register_patient(
+            telegram_id=None,
+            name="Setup Patient",
+            age="41",
+            gender="Female",
+            phone="08107840312",
+            email="setup.patient@example.com",
+            address="Lagos",
+            allergy="",
+        )
+
+        with patch("web.backend.app.services.auth_service.send_plain_email", return_value=True):
+            reply = build_keyword_reply(f"setup {patient['hospital_number']}", sender="2348107840312")
+
+        self.assertIn("setup link", reply)
+        self.assertIn("email", reply)
+
+    def test_whatsapp_document_notice_points_to_secure_patient_documents(self):
+        patient = register_patient(
+            telegram_id=None,
+            name="Document Patient",
+            age="33",
+            gender="Male",
+            phone="08107840312",
+            email="document.patient@example.com",
+            address="Lagos",
+            allergy="",
+        )
+        os.environ["WHATSAPP_ACCESS_TOKEN"] = "test-token"
+        os.environ["WHATSAPP_PHONE_NUMBER_ID"] = "12345"
+        os.environ["FRONTEND_BASE_URL"] = "https://synmedhealth.com"
+        self.addCleanup(lambda: os.environ.pop("WHATSAPP_ACCESS_TOKEN", None))
+        self.addCleanup(lambda: os.environ.pop("WHATSAPP_PHONE_NUMBER_ID", None))
+        self.addCleanup(lambda: os.environ.pop("FRONTEND_BASE_URL", None))
+
+        with patch("web.backend.app.services.whatsapp_service.send_text_message", new_callable=AsyncMock) as mocked_send:
+            delivered = asyncio.run(send_patient_document_notice(patient, "prescription"))
+
+        self.assertTrue(delivered)
+        mocked_send.assert_awaited_once()
+        recipient, body = mocked_send.await_args.args
+        self.assertEqual(recipient, "2348107840312")
+        self.assertIn("prescription is ready", body)
+        self.assertIn("https://synmedhealth.com/patient/documents", body)
 
     def test_doctor_profile_is_persisted_and_updated(self):
         create_or_update_profile(

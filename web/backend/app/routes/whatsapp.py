@@ -106,7 +106,7 @@ async def receive_whatsapp_webhook(request: Request):
     reply_count = 0
     for message in text_messages:
         try:
-            reply = build_keyword_reply(message["text"], message.get("name", ""))
+            reply = build_keyword_reply(message["text"], message.get("name", ""), message.get("from", ""))
             await send_text_message(message["from"], reply)
             reply_count += 1
         except WhatsAppConfigurationError as exc:
