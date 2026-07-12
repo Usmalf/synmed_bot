@@ -36,7 +36,7 @@ from synmed_utils.doctor_profiles import format_doctor_intro
 from synmed_utils.verified_doctors import is_verified
 from .auth_service import hash_patient_password, send_email_with_attachment, send_plain_email
 from .medical_report_app_service import list_doctor_medical_report_requests
-from .whatsapp_service import send_patient_document_notice, send_text_message, send_text_message_sync
+from .whatsapp_service import send_patient_document_notice, send_text_message, send_text_message_sync, send_whatsapp_rating_prompt
 
 
 UTC = timezone.utc
@@ -849,7 +849,7 @@ async def end_doctor_chat(doctor_id: int) -> dict:
 
     if patient_details.get("channel") == "whatsapp" and patient_details.get("whatsapp_id"):
         try:
-            await send_text_message(patient_details["whatsapp_id"], "The consultation has ended. Thank you for using SynMed Telehealth.")
+            await send_whatsapp_rating_prompt(patient_details["whatsapp_id"], consultation, patient_details)
         except Exception:
             pass
     elif patient_details.get("source") != "web":

@@ -46,6 +46,7 @@ from web.backend.app.services.doctor_app_service import send_doctor_message
 from web.backend.app.services.payment_app_service import verify_web_payment
 from web.backend.app.services.whatsapp_service import build_keyword_reply, build_whatsapp_reply, send_patient_document_notice
 from web.backend.app.routes.payments import whatsapp_payment_return
+from web.backend.app.routes.whatsapp import _extract_text_messages
 
 
 class TestPersistenceStores(unittest.TestCase):
@@ -366,6 +367,212 @@ class TestPersistenceStores(unittest.TestCase):
 
         self.assertTrue(result["sent"])
         mocked_send.assert_awaited_once_with("2348107840312", "Please take your temperature.")
+
+    def test_whatsapp_end_chat_collects_rating_and_review(self):
+        patient = register_patient(
+            telegram_id=None,
+            name="WhatsApp Review Patient",
+            age="45",
+            gender="Female",
+            phone="08107840312",
+            email="review.patient@example.com",
+            address="Lagos",
+            allergy="",
+        )
+        doctor_id = 90002
+        doctor_registry.set_doctor_busy(doctor_id, channel="web")
+        consultation_id = start_chat(
+            patient["id"],
+            doctor_id,
+            {
+                "reference": "wa-review-ref",
+                "hospital_number": patient["hospital_number"],
+                "name": patient["name"],
+                "age": str(patient["age"]),
+                "gender": patient["gender"],
+                "phone": patient["phone"],
+                "address": patient["address"],
+                "allergy": patient["allergy"],
+                "history": "Body pain",
+                "source": "web",
+                "channel": "whatsapp",
+                "whatsapp_id": "2348107840312",
+            },
+        )
+
+        prompt = asyncio.run(build_whatsapp_reply("end chat", name="WhatsApp Review Patient", sender="2348107840312"))
+        self.assertIn("rate your doctor", prompt)
+        rating_reply = asyncio.run(build_whatsapp_reply("5", name="WhatsApp Review Patient", sender="2348107840312"))
+        self.assertIn("5/5", rating_reply)
+        self.assertIn("short review", rating_reply)
+        review_reply = asyncio.run(build_whatsapp_reply("Very helpful doctor", name="WhatsApp Review Patient", sender="2348107840312"))
+        self.assertIn("review has been submitted", review_reply)
+
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT rating FROM doctor_ratings WHERE consultation_id = ?", (consultation_id,))
+            rating = cursor.fetchone()
+            cursor.execute("SELECT review FROM doctor_reviews WHERE consultation_id = ?", (consultation_id,))
+            review = cursor.fetchone()
+            cursor.execute("SELECT state FROM whatsapp_sessions WHERE whatsapp_id = ?", ("2348107840312",))
+            session = cursor.fetchone()
+        self.assertEqual(rating["rating"], 5)
+        self.assertEqual(review["review"], "Very helpful doctor")
+        self.assertIsNone(session)
+
+    def test_whatsapp_rating_accepts_interactive_list_choice(self):
+        patient = register_patient(
+            telegram_id=None,
+            name="WhatsApp List Rating Patient",
+            age="41",
+            gender="Female",
+            phone="08107840312",
+            email="whatsapp.list.rating@example.com",
+            address="Lagos",
+            allergy="",
+        )
+        doctor_id = 90003
+        doctor_registry.set_doctor_busy(doctor_id, channel="web")
+        consultation_id = start_chat(
+            patient["id"],
+            doctor_id,
+            {
+                "reference": "wa-list-rating-ref",
+                "hospital_number": patient["hospital_number"],
+                "name": patient["name"],
+                "age": str(patient["age"]),
+                "gender": patient["gender"],
+                "phone": patient["phone"],
+                "address": patient["address"],
+                "allergy": patient["allergy"],
+                "history": "Body pain",
+                "source": "web",
+                "channel": "whatsapp",
+                "whatsapp_id": "2348107840312",
+            },
+        )
+
+        asyncio.run(build_whatsapp_reply("end chat", name="WhatsApp List Rating Patient", sender="2348107840312"))
+        rating_reply = asyncio.run(build_whatsapp_reply("rating:5", name="WhatsApp List Rating Patient", sender="2348107840312"))
+
+        self.assertIn("rated your doctor 5/5", rating_reply)
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT rating FROM doctor_ratings WHERE consultation_id = ?", (consultation_id,))
+            rating = cursor.fetchone()
+        self.assertEqual(rating["rating"], 5)
+
+    def test_whatsapp_stale_queue_session_is_cleared_after_consultation_ends(self):
+        patient = register_patient(
+            telegram_id=None,
+            name="WhatsApp Stale Queue Patient",
+            age="39",
+            gender="Male",
+            phone="08107840312",
+            email="whatsapp.stale.queue@example.com",
+            address="Lagos",
+            allergy="",
+        )
+        timestamp = datetime.now(timezone.utc).isoformat()
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO whatsapp_sessions (whatsapp_id, name, state, payload_json, updated_at, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "2348107840312",
+                    "WhatsApp Stale Queue Patient",
+                    "queued",
+                    json.dumps({"patient_id": patient["hospital_number"], "reference": "wa-stale"}),
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            conn.commit()
+
+        reply = asyncio.run(build_whatsapp_reply("I still need help", name="WhatsApp Stale Queue Patient", sender="2348107840312"))
+
+        self.assertIn("previous consultation has ended", reply)
+        self.assertNotIn("still in the doctor queue", reply)
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT state FROM whatsapp_sessions WHERE whatsapp_id = ?", ("2348107840312",))
+            session = cursor.fetchone()
+        self.assertIsNone(session)
+
+    def test_whatsapp_webhook_extracts_interactive_list_reply(self):
+        payload = {
+            "entry": [
+                {
+                    "changes": [
+                        {
+                            "value": {
+                                "contacts": [{"wa_id": "2348107840312", "profile": {"name": "WhatsApp User"}}],
+                                "messages": [
+                                    {
+                                        "from": "2348107840312",
+                                        "id": "wamid.test",
+                                        "type": "interactive",
+                                        "interactive": {
+                                            "type": "list_reply",
+                                            "list_reply": {"id": "rating:5", "title": "5 stars"},
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+
+        messages = _extract_text_messages(payload)
+
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0]["from"], "2348107840312")
+        self.assertEqual(messages[0]["text"], "rating:5")
+        self.assertEqual(messages[0]["name"], "WhatsApp User")
+
+    def test_paystack_webhook_records_event_and_updates_payment_once(self):
+        reference = "synmed-test-webhook"
+        create_payment_record(
+            reference=reference,
+            telegram_id=0,
+            patient_id="SM0001",
+            email="patient@example.com",
+            amount=2000,
+            currency="NGN",
+            patient_type="returning",
+            label="SynMed Consultation Fee",
+        )
+        payload = {
+            "id": "evt-refund-1",
+            "event": "refund.processed",
+            "data": {
+                "reference": reference,
+                "status": "processed",
+                "amount": 200000,
+                "currency": "NGN",
+            },
+        }
+        raw_body = json.dumps(payload).encode("utf-8")
+
+        first = process_paystack_webhook(payload, raw_body)
+        second = process_paystack_webhook(payload, raw_body)
+        payment = get_payment_by_reference(reference)
+        events = list_payment_events()
+
+        self.assertTrue(first["inserted"])
+        self.assertTrue(first["payment_updated"])
+        self.assertFalse(second["inserted"])
+        self.assertFalse(second["payment_updated"])
+        self.assertEqual(payment["status"], "refunded")
+        self.assertEqual(payment["paystack_status"], "processed")
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["event_type"], "refund.processed")
+        self.assertEqual(events[0]["reference"], reference)
 
     def test_doctor_profile_is_persisted_and_updated(self):
         create_or_update_profile(

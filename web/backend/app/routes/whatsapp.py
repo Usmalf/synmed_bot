@@ -43,10 +43,21 @@ def _extract_text_messages(payload: dict) -> list[dict]:
             if not isinstance(inbound_messages, list):
                 continue
             for message in inbound_messages:
-                if not isinstance(message, dict) or message.get("type") != "text":
+                if not isinstance(message, dict):
                     continue
                 sender = (message.get("from") or "").strip()
-                text = ((message.get("text") or {}).get("body") or "").strip()
+                message_type = message.get("type")
+                text = ""
+                if message_type == "text":
+                    text = ((message.get("text") or {}).get("body") or "").strip()
+                elif message_type == "interactive":
+                    interactive = message.get("interactive") or {}
+                    if interactive.get("type") == "button_reply":
+                        reply = interactive.get("button_reply") or {}
+                        text = (reply.get("id") or reply.get("title") or "").strip()
+                    elif interactive.get("type") == "list_reply":
+                        reply = interactive.get("list_reply") or {}
+                        text = (reply.get("id") or reply.get("title") or "").strip()
                 if sender and text:
                     messages.append(
                         {

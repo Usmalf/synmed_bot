@@ -9,6 +9,7 @@ from database import get_connection
 from services.emergency import detect_emergency
 from services.consultation_records import log_consultation_message
 from services.patient_records import get_patient_by_identifier, register_patient
+from services.ratings_service import add_rating, add_review, has_rating, has_review
 from services.paystack import (
     PaystackError,
     build_backend_callback_url,
@@ -72,6 +73,8 @@ COMMAND_WORDS = {
     "startover",
     "end",
     "end chat",
+    "no thanks",
+    "skip",
 }
 RESTART_WORDS = {"hi", "hello", "hey", "menu", "start", "restart", "start over", "startover"}
 
@@ -251,6 +254,127 @@ def _wrong_step_reply(expected: str) -> str:
         "That response does not match this step.\n\n"
         f"{expected}\n\n"
         "You can reply start to begin again, or cancel to stop this process."
+    )
+
+
+def _rating_prompt() -> str:
+    return (
+        "Your consultation has ended. Thank you for using SynMed Telehealth.\n\n"
+        "Please rate your doctor from 1 to 5.\n"
+        "You can also reply no thanks to skip."
+    )
+
+
+def _normalize_feedback_reply(message_text: str) -> str:
+    normalized = (message_text or "").strip().lower()
+    if normalized.startswith("rating:"):
+        value = normalized.split(":", 1)[1].strip()
+        if value in {"skip", "no_thanks", "no thanks"}:
+            return "no thanks"
+        return value
+    return normalized
+
+
+async def send_whatsapp_rating_prompt(whatsapp_id: str, consultation: dict, patient_details: dict | None = None) -> bool:
+    if not whatsapp_id:
+        return False
+    patient_id = consultation.get("patient_id")
+    doctor_id = consultation.get("doctor_id")
+    consultation_id = consultation.get("consultation_id")
+    if not consultation_id or not patient_id or not doctor_id:
+        return False
+    _save_session(
+        whatsapp_id,
+        "awaiting_rating",
+        {
+            "consultation_id": consultation_id,
+            "doctor_id": doctor_id,
+            "patient_runtime_id": patient_id,
+            "patient_id": (patient_details or {}).get("hospital_number", ""),
+        },
+        (patient_details or {}).get("name", ""),
+    )
+    if not is_configured():
+        return False
+    try:
+        await send_rating_options_message(whatsapp_id)
+    except httpx.HTTPError:
+        await send_text_message(whatsapp_id, _rating_prompt())
+    return True
+
+
+def _skip_whatsapp_feedback(whatsapp_id: str) -> str:
+    _clear_session(whatsapp_id)
+    return "No problem. Thank you for using SynMed Telehealth."
+
+
+def _rating_payload_is_valid(payload: dict) -> bool:
+    return bool(payload.get("consultation_id") and payload.get("doctor_id") and payload.get("patient_runtime_id"))
+
+
+async def _handle_whatsapp_feedback(session: dict, message_text: str) -> str:
+    whatsapp_id = session["whatsapp_id"]
+    normalized = _normalize_feedback_reply(message_text)
+    payload = dict(session.get("payload") or {})
+    if normalized in {"no thanks", "no thank you", "skip"}:
+        return _skip_whatsapp_feedback(whatsapp_id)
+    if not _rating_payload_is_valid(payload):
+        _clear_session(whatsapp_id)
+        return "I could not find the consultation to rate. Thank you for using SynMed Telehealth."
+
+    consultation_id = payload["consultation_id"]
+    doctor_id = int(payload["doctor_id"])
+    patient_id = int(payload["patient_runtime_id"])
+
+    if session["state"] == "awaiting_rating":
+        if not normalized.isdigit() or int(normalized) < 1 or int(normalized) > 5:
+            return _wrong_step_reply("Please reply with a number from 1 to 5, or reply no thanks to skip.")
+        rating = int(normalized)
+        if not has_rating(consultation_id):
+            add_rating(consultation_id, doctor_id, patient_id, rating)
+        payload["rating"] = rating
+        _save_session(whatsapp_id, "awaiting_review", payload, session.get("name", ""))
+        return (
+            f"Thank you. You rated your doctor {rating}/5.\n\n"
+            "Would you like to leave a short review? Type your review, or reply no thanks."
+        )
+
+    if session["state"] == "awaiting_review":
+        review = (message_text or "").strip()
+        if len(review) < 2:
+            return _wrong_step_reply("Please type a short review, or reply no thanks to skip.")
+        if not has_review(consultation_id):
+            add_review(consultation_id, doctor_id, patient_id, review)
+        _clear_session(whatsapp_id)
+        return "Thank you. Your review has been submitted."
+
+    return build_basic_menu(session.get("name", ""))
+
+
+def _queued_session_patient_id(session: dict) -> int | None:
+    payload = session.get("payload") or {}
+    patient_identifier = payload.get("patient_id") or payload.get("hospital_number")
+    patient = get_patient_by_identifier(patient_identifier) if patient_identifier else _lookup_patient_from_phone(session["whatsapp_id"])
+    if not patient:
+        return None
+    try:
+        return int(patient["id"])
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_whatsapp_session_still_queued(session: dict) -> bool:
+    patient_runtime_id = _queued_session_patient_id(session)
+    if patient_runtime_id is None:
+        return False
+    return patient_runtime_id in registry.waiting_patients
+
+
+def _clear_stale_queue_session(whatsapp_id: str) -> str:
+    _clear_session(whatsapp_id)
+    return (
+        "That previous consultation has ended.\n\n"
+        "Reply 2 to start a new consultation, or reply menu to see all options."
     )
 
 
@@ -877,14 +1001,19 @@ async def build_whatsapp_reply(message_text: str, name: str = "", sender: str = 
         return _cancel_whatsapp_flow(sender)
 
     patient, active_consultation = _active_consultation_for_whatsapp(sender)
+    if session and session["state"] in {"awaiting_rating", "awaiting_review"}:
+        return await _handle_whatsapp_feedback(session, message_text)
+
     if session and not active_consultation and normalized in RESTART_WORDS:
         _clear_session(sender)
         return "No problem. I have restarted the WhatsApp flow.\n\n" + build_basic_menu(name)
 
     if active_consultation and normalized in {"end", "end chat"}:
+        consultation_for_rating = active_consultation
+        details = consultation_for_rating.get("patient_details") or {}
         end_chat(patient["id"])
-        _clear_session(sender)
-        return "Your consultation has been ended. Thank you for using SynMed Telehealth."
+        await send_whatsapp_rating_prompt(sender, consultation_for_rating, details)
+        return _rating_prompt()
     if active_consultation and normalized not in COMMAND_WORDS and not normalized.startswith("paid"):
         return await _relay_patient_chat_message(sender, message_text)
 
@@ -903,6 +1032,8 @@ async def build_whatsapp_reply(message_text: str, name: str = "", sender: str = 
         )
         return _wrong_step_reply(expected)
     if session and session["state"] == "queued" and normalized not in COMMAND_WORDS:
+        if not _is_whatsapp_session_still_queued(session):
+            return _clear_stale_queue_session(sender)
         return (
             "You are still in the doctor queue. A SynMed doctor will join as soon as one is available.\n\n"
             "If you want to cancel, reply cancel."
@@ -936,6 +1067,45 @@ async def send_text_message(to: str, message: str) -> dict:
         "to": to,
         "type": "text",
         "text": {"preview_url": True, "body": message},
+    }
+    async with httpx.AsyncClient(timeout=20) as client:
+        response = await client.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+    response.raise_for_status()
+    return response.json()
+
+
+async def send_rating_options_message(to: str) -> dict:
+    token = _access_token()
+    phone_number_id = _phone_number_id()
+    if not token or not phone_number_id:
+        raise WhatsAppConfigurationError("WhatsApp access token or phone number ID is not configured.")
+
+    url = f"https://graph.facebook.com/{WHATSAPP_API_VERSION}/{phone_number_id}/messages"
+    rows = [
+        {"id": f"rating:{score}", "title": f"{score} star" if score == 1 else f"{score} stars"}
+        for score in range(1, 6)
+    ]
+    rows.append({"id": "rating:skip", "title": "No thanks"})
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to,
+        "type": "interactive",
+        "interactive": {
+            "type": "list",
+            "body": {"text": _rating_prompt()},
+            "action": {
+                "button": "Rate doctor",
+                "sections": [{"title": "Doctor rating", "rows": rows}],
+            },
+        },
     }
     async with httpx.AsyncClient(timeout=20) as client:
         response = await client.post(
