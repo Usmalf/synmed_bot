@@ -1,4 +1,5 @@
 import json
+import gc
 import os
 import sqlite3
 import zipfile
@@ -14,10 +15,14 @@ BACKUP_TABLES = [
     "doctors",
     "patients",
     "payments",
+    "payment_events",
+    "doctor_earnings",
+    "doctor_payout_preferences",
     "dismissed_payment_attention",
     "consultations",
     "consultation_messages",
     "consultation_timeline",
+    "consultation_transfer_requests",
     "admin_audit_logs",
     "follow_up_appointments",
     "prescriptions",
@@ -70,9 +75,15 @@ def _timestamp() -> str:
 
 def _sqlite_snapshot(source: Path, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(source) as source_conn:
-        with sqlite3.connect(destination) as backup_conn:
-            source_conn.backup(backup_conn)
+    source_conn = sqlite3.connect(str(source))
+    backup_conn = sqlite3.connect(str(destination))
+    try:
+        source_conn.backup(backup_conn)
+        backup_conn.commit()
+    finally:
+        backup_conn.close()
+        source_conn.close()
+        gc.collect()
 
 
 def _postgres_table_exists(cursor, table_name: str) -> bool:

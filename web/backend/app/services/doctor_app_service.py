@@ -21,6 +21,12 @@ from services.consultation_calls import (
 from services.consultation_records import log_consultation_message
 from services.consultation_records import set_consultation_diagnosis
 from services.consultation_records import set_consultation_notes
+from services.consultation_transfers import (
+    create_transfer_request,
+    list_doctor_transfer_requests,
+    list_transfer_eligible_doctors,
+    respond_to_transfer_request,
+)
 from services.operational_errors import log_exception, log_operational_error
 from services.patient_records import get_patient_by_identifier
 from .chat_realtime_service import realtime_hub
@@ -478,6 +484,8 @@ def get_doctor_workspace(doctor_id: int) -> dict:
         "queue": _queue_payload(),
         "active_consultation": _active_consultation_payload(doctor_id),
         "medical_report_requests": list_doctor_medical_report_requests(doctor_id),
+        "transfer_requests": list_doctor_transfer_requests(doctor_id),
+        "transfer_doctors": list_transfer_eligible_doctors(doctor_id),
         "call": _call_payload_for_consultation(
             (_active_consultation_payload(doctor_id) or {}).get("consultation_id")
         ),
@@ -633,6 +641,20 @@ def get_doctor_transcript(doctor_id: int) -> dict:
         "transcript": _get_transcript_by_consultation_id(consultation["consultation_id"]),
         "call": _call_payload_for_consultation(consultation["consultation_id"]),
     }
+
+
+def request_doctor_transfer(doctor_id: int, to_doctor_id: int, handover_note: str) -> dict:
+    doctor_id = _runtime_id(doctor_id)
+    _restore_runtime_state()
+    result = create_transfer_request(doctor_id, to_doctor_id, handover_note)
+    return get_doctor_workspace(doctor_id) | result
+
+
+def respond_doctor_transfer(doctor_id: int, transfer_id: str, action: str) -> dict:
+    doctor_id = _runtime_id(doctor_id)
+    _restore_runtime_state()
+    result = respond_to_transfer_request(doctor_id, transfer_id, action)
+    return get_doctor_workspace(doctor_id) | result
 
 
 async def send_doctor_message(doctor_id: int, message_text: str) -> dict:

@@ -8,6 +8,8 @@ class DoctorWorkspaceResponse(BaseModel):
     queue: list[dict] = []
     active_consultation: dict | None = None
     medical_report_requests: list[dict] = []
+    transfer_requests: dict = {}
+    transfer_doctors: list[dict] = []
     call: dict | None = None
 
 
@@ -18,6 +20,15 @@ class DoctorPresenceRequest(BaseModel):
 
 class DoctorQueueConnectRequest(BaseModel):
     runtime_patient_id: int
+
+
+class DoctorTransferRequest(BaseModel):
+    to_doctor_id: int
+    handover_note: str = ""
+
+
+class DoctorTransferResponseRequest(BaseModel):
+    action: str
 
 
 class DoctorMessageRequest(BaseModel):

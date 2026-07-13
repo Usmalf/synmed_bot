@@ -3,6 +3,15 @@ import { createPortal } from "react-dom";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import BrandedLoader from "../components/BrandedLoader.jsx";
 import {
+  MicIcon,
+  MicOffIcon,
+  PhoneIcon,
+  PhoneOffIcon,
+  SwitchCameraIcon,
+  VideoIcon,
+  VideoOffIcon,
+} from "../components/CallIcons.jsx";
+import {
   acceptConsultationCall,
   createConsultationEventSource,
   createConsultationWebSocket,
@@ -378,6 +387,7 @@ export default function ConsultationPage() {
   const [callWindowMinimized, setCallWindowMinimized] = useState(false);
   const [queuedPromptVisible, setQueuedPromptVisible] = useState(false);
   const autoExpandedVideoCallRef = useRef("");
+  const [cameraFacingMode, setCameraFacingMode] = useState("user");
   const [callWindowPosition, setCallWindowPosition] = useState({ x: null, y: null });
   const [callTimerNow, setCallTimerNow] = useState(() => Date.now());
   const [consultationDetailsOpen, setConsultationDetailsOpen] = useState(false);
@@ -789,7 +799,7 @@ export default function ConsultationPage() {
 
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: true,
-      video: callType === "video",
+      video: callType === "video" ? { facingMode: { ideal: cameraFacingMode } } : false,
     });
     localStreamRef.current = stream;
     setCallUiState((current) => ({
@@ -881,6 +891,7 @@ export default function ConsultationPage() {
       audioMuted: false,
       videoDisabled: false,
     });
+    setCameraFacingMode("user");
     setCallWindowMinimized(false);
     setCallWindowPosition({ x: null, y: null });
   }
@@ -1007,6 +1018,51 @@ export default function ConsultationPage() {
       ...current,
       videoDisabled: nextDisabled,
     }));
+  }
+
+  async function switchLocalCamera() {
+    if (!localStreamRef.current || !navigator.mediaDevices?.getUserMedia) {
+      return;
+    }
+
+    const currentVideoTrack = localStreamRef.current.getVideoTracks()[0];
+    if (!currentVideoTrack) {
+      return;
+    }
+
+    const nextFacingMode = cameraFacingMode === "user" ? "environment" : "user";
+    setCallUiState((current) => ({ ...current, message: "Switching camera..." }));
+    try {
+      const nextStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: nextFacingMode } },
+      });
+      const nextVideoTrack = nextStream.getVideoTracks()[0];
+      if (!nextVideoTrack) {
+        throw new Error("No camera track returned.");
+      }
+      nextVideoTrack.enabled = !callUiState.videoDisabled;
+      const sender = peerConnectionRef.current
+        ?.getSenders()
+        .find((item) => item.track?.kind === "video");
+      if (sender) {
+        await sender.replaceTrack(nextVideoTrack);
+      }
+      localStreamRef.current.removeTrack(currentVideoTrack);
+      currentVideoTrack.stop();
+      localStreamRef.current.addTrack(nextVideoTrack);
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = localStreamRef.current;
+        localVideoRef.current.play?.().catch(() => {});
+      }
+      setCameraFacingMode(nextFacingMode);
+      setCallUiState((current) => ({ ...current, message: "" }));
+    } catch {
+      setCallUiState((current) => ({
+        ...current,
+        message: "Unable to switch camera on this device.",
+      }));
+    }
   }
 
   async function preparePeerConnection(callType) {
@@ -1955,10 +2011,16 @@ export default function ConsultationPage() {
                   {incomingCall && !acceptingIncomingCall ? (
                     <>
                       <button className="button button--primary" type="button" onClick={handleAcceptIncomingCall}>
-                        Accept
+                        <span className="call-control-button__content">
+                          <PhoneIcon />
+                          Accept
+                        </span>
                       </button>
                       <button className="button button--secondary" type="button" onClick={handleRejectIncomingCall}>
-                        Decline
+                        <span className="call-control-button__content">
+                          <PhoneOffIcon />
+                          Decline
+                        </span>
                       </button>
                     </>
                   ) : null}
@@ -1967,16 +2029,33 @@ export default function ConsultationPage() {
                     <>
                       {callUiState.localMediaReady ? (
                         <button className="button button--secondary" type="button" onClick={toggleLocalAudio}>
-                          {callUiState.audioMuted ? "Unmute" : "Mute"}
+                          <span className="call-control-button__content">
+                            {callUiState.audioMuted ? <MicOffIcon /> : <MicIcon />}
+                            {callUiState.audioMuted ? "Unmute" : "Mute"}
+                          </span>
                         </button>
                       ) : null}
                       {callUiState.localMediaReady && hasLocalVideoTrack ? (
                         <button className="button button--secondary" type="button" onClick={toggleLocalVideo}>
-                          {callUiState.videoDisabled ? "Camera On" : "Camera Off"}
+                          <span className="call-control-button__content">
+                            {callUiState.videoDisabled ? <VideoOffIcon /> : <VideoIcon />}
+                            {callUiState.videoDisabled ? "Camera On" : "Camera Off"}
+                          </span>
+                        </button>
+                      ) : null}
+                      {callUiState.localMediaReady && hasLocalVideoTrack ? (
+                        <button className="button button--secondary" type="button" onClick={switchLocalCamera}>
+                          <span className="call-control-button__content">
+                            <SwitchCameraIcon />
+                            Switch
+                          </span>
                         </button>
                       ) : null}
                       <button className="button button--secondary" type="button" onClick={handleEndCurrentCall}>
-                        {effectiveActiveCall ? "End Call" : "Cancel"}
+                        <span className="call-control-button__content">
+                          <PhoneOffIcon />
+                          {effectiveActiveCall ? "End Call" : "Cancel"}
+                        </span>
                       </button>
                     </>
                   ) : null}
@@ -2176,19 +2255,25 @@ export default function ConsultationPage() {
                     <button
                       className="button button--secondary"
                       type="button"
-                      disabled={hasCallInProgress}
-                      onClick={() => handleStartCall("voice")}
-                    >
-                      {"\u260E"} Voice Call
-                    </button>
-                    <button
-                      className="button button--secondary"
-                      type="button"
-                      disabled={hasCallInProgress}
-                      onClick={() => handleStartCall("video")}
-                    >
-                      {"\u25B6"} Video Call
-                    </button>
+                    disabled={hasCallInProgress}
+                    onClick={() => handleStartCall("voice")}
+                  >
+                    <span className="call-control-button__content">
+                      <PhoneIcon />
+                      Voice Call
+                    </span>
+                  </button>
+                  <button
+                    className="button button--secondary"
+                    type="button"
+                    disabled={hasCallInProgress}
+                    onClick={() => handleStartCall("video")}
+                  >
+                    <span className="call-control-button__content">
+                      <VideoIcon />
+                      Video Call
+                    </span>
+                  </button>
                   </div>
                 </div>
               ) : null}

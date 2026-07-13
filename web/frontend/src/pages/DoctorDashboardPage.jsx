@@ -2,6 +2,15 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import BrandedLoader from "../components/BrandedLoader.jsx";
+import {
+  MicIcon,
+  MicOffIcon,
+  PhoneIcon,
+  PhoneOffIcon,
+  SwitchCameraIcon,
+  VideoIcon,
+  VideoOffIcon,
+} from "../components/CallIcons.jsx";
 import SectionCard from "../components/SectionCard.jsx";
 import StatusPill from "../components/StatusPill.jsx";
 import { clearAuthToken, clearPendingLogin, restoreSession } from "../api/auth.js";
@@ -14,6 +23,8 @@ import {
   endDoctorChat,
   fetchDoctorTranscript,
   rejectDoctorCall,
+  requestDoctorTransfer,
+  respondDoctorTransfer,
   sendDoctorAttachment,
   sendDoctorMessage,
   sendDoctorCallCandidate,
@@ -462,6 +473,8 @@ export default function DoctorDashboardPage() {
     message: "History notes will autosave while you type.",
     savedAt: "",
   });
+  const [transferForm, setTransferForm] = useState({ open: false, toDoctorId: "", handoverNote: "" });
+  const [transferState, setTransferState] = useState({ status: "idle", message: "" });
   const [activeTool, setActiveTool] = useState(null);
   const [clinicalToolsOpen, setClinicalToolsOpen] = useState(false);
   const [patientSummaryOpen, setPatientSummaryOpen] = useState(false);
@@ -484,6 +497,7 @@ export default function DoctorDashboardPage() {
   });
   const [callWindowMinimized, setCallWindowMinimized] = useState(false);
   const autoExpandedVideoCallRef = useRef("");
+  const [cameraFacingMode, setCameraFacingMode] = useState("user");
   const [callWindowPosition, setCallWindowPosition] = useState({ x: null, y: null });
   const [callTimerNow, setCallTimerNow] = useState(() => Date.now());
 
@@ -1026,6 +1040,49 @@ export default function DoctorDashboardPage() {
     }
   }
 
+  async function handleRequestTransfer(event) {
+    event.preventDefault();
+    if (!transferForm.toDoctorId) {
+      setTransferState({ status: "error", message: "Select an online doctor to receive this patient." });
+      return;
+    }
+    setTransferState({ status: "loading", message: "Sending transfer request..." });
+    try {
+      const result = await requestDoctorTransfer({
+        to_doctor_id: Number(transferForm.toDoctorId),
+        handover_note: transferForm.handoverNote,
+      });
+      setWorkspaceState({
+        status: result.found ? "success" : "empty",
+        message: result.message,
+        result,
+      });
+      setTransferForm({ open: false, toDoctorId: "", handoverNote: "" });
+      setTransferState({ status: result.created ? "success" : "error", message: result.message });
+    } catch (error) {
+      setTransferState({ status: "error", message: error.message || "Unable to request transfer." });
+    }
+  }
+
+  async function handleTransferResponse(transferId, action) {
+    setTransferState({ status: "loading", message: action === "accept" ? "Accepting transfer..." : "Declining transfer..." });
+    try {
+      const result = await respondDoctorTransfer(transferId, action);
+      setWorkspaceState({
+        status: result.found ? "success" : "empty",
+        message: result.message,
+        result,
+      });
+      setTransferState({ status: result.updated ? "success" : "error", message: result.message });
+      if (result.active_consultation) {
+        setShowConsultationView(true);
+        loadTranscript();
+      }
+    } catch (error) {
+      setTransferState({ status: "error", message: error.message || "Unable to update transfer request." });
+    }
+  }
+
   async function handleConnectPatient(runtimePatientId) {
     if (doctor?.status !== "available") {
       setWorkspaceState((current) => ({
@@ -1371,6 +1428,10 @@ export default function DoctorDashboardPage() {
   const doctorStatusLabel = doctorBusy ? "busy" : doctorOnline ? "online" : "offline";
   const doctorCanConnect = doctorOnline && !activeConsultation?.consultation_id;
   const doctorInSession = Boolean(activeConsultation?.consultation_id);
+  const transferRequests = workspaceState.result?.transfer_requests || {};
+  const incomingTransfers = transferRequests.incoming || [];
+  const outgoingTransfers = transferRequests.outgoing || [];
+  const transferDoctors = workspaceState.result?.transfer_doctors || [];
   const currentCall = workspaceState.result?.call || null;
   const doctorAcceptingIncomingCall =
     currentCall?.status === "ringing" &&
@@ -1644,10 +1705,16 @@ export default function DoctorDashboardPage() {
                         type="button"
                         onClick={() => handleAcceptDoctorIncomingCall(currentCall)}
                       >
-                        Accept
+                        <span className="call-control-button__content">
+                          <PhoneIcon />
+                          Accept
+                        </span>
                       </button>
                       <button className="button button--secondary" type="button" onClick={handleRejectDoctorIncomingCall}>
-                        Decline
+                        <span className="call-control-button__content">
+                          <PhoneOffIcon />
+                          Decline
+                        </span>
                       </button>
                     </>
                   ) : null}
@@ -1656,16 +1723,33 @@ export default function DoctorDashboardPage() {
                     <>
                       {callUiState.localMediaReady ? (
                         <button className="button button--secondary" type="button" onClick={toggleDoctorAudio}>
-                          {callUiState.audioMuted ? "Unmute" : "Mute"}
+                          <span className="call-control-button__content">
+                            {callUiState.audioMuted ? <MicOffIcon /> : <MicIcon />}
+                            {callUiState.audioMuted ? "Unmute" : "Mute"}
+                          </span>
                         </button>
                       ) : null}
                       {callUiState.localMediaReady && doctorHasLocalVideoTrack ? (
                         <button className="button button--secondary" type="button" onClick={toggleDoctorVideo}>
-                          {callUiState.videoDisabled ? "Camera On" : "Camera Off"}
+                          <span className="call-control-button__content">
+                            {callUiState.videoDisabled ? <VideoOffIcon /> : <VideoIcon />}
+                            {callUiState.videoDisabled ? "Camera On" : "Camera Off"}
+                          </span>
+                        </button>
+                      ) : null}
+                      {callUiState.localMediaReady && doctorHasLocalVideoTrack ? (
+                        <button className="button button--secondary" type="button" onClick={switchDoctorCamera}>
+                          <span className="call-control-button__content">
+                            <SwitchCameraIcon />
+                            Switch
+                          </span>
                         </button>
                       ) : null}
                       <button className="button button--secondary" type="button" onClick={handleEndDoctorCurrentCall}>
-                        {doctorEffectiveActiveCall ? "End Call" : "Cancel"}
+                        <span className="call-control-button__content">
+                          <PhoneOffIcon />
+                          {doctorEffectiveActiveCall ? "End Call" : "Cancel"}
+                        </span>
                       </button>
                     </>
                   ) : null}
@@ -2045,7 +2129,7 @@ export default function DoctorDashboardPage() {
 
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: true,
-      video: callType === "video",
+      video: callType === "video" ? { facingMode: { ideal: cameraFacingMode } } : false,
     });
     localStreamRef.current = stream;
     setCallUiState((current) => ({
@@ -2137,6 +2221,7 @@ export default function DoctorDashboardPage() {
       audioMuted: false,
       videoDisabled: false,
     });
+    setCameraFacingMode("user");
     setCallWindowMinimized(false);
     setCallWindowPosition({ x: null, y: null });
   }
@@ -2259,6 +2344,51 @@ export default function DoctorDashboardPage() {
       ...current,
       videoDisabled: nextDisabled,
     }));
+  }
+
+  async function switchDoctorCamera() {
+    if (!localStreamRef.current || !navigator.mediaDevices?.getUserMedia) {
+      return;
+    }
+
+    const currentVideoTrack = localStreamRef.current.getVideoTracks()[0];
+    if (!currentVideoTrack) {
+      return;
+    }
+
+    const nextFacingMode = cameraFacingMode === "user" ? "environment" : "user";
+    setCallUiState((current) => ({ ...current, message: "Switching camera..." }));
+    try {
+      const nextStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: nextFacingMode } },
+      });
+      const nextVideoTrack = nextStream.getVideoTracks()[0];
+      if (!nextVideoTrack) {
+        throw new Error("No camera track returned.");
+      }
+      nextVideoTrack.enabled = !callUiState.videoDisabled;
+      const sender = peerConnectionRef.current
+        ?.getSenders()
+        .find((item) => item.track?.kind === "video");
+      if (sender) {
+        await sender.replaceTrack(nextVideoTrack);
+      }
+      localStreamRef.current.removeTrack(currentVideoTrack);
+      currentVideoTrack.stop();
+      localStreamRef.current.addTrack(nextVideoTrack);
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = localStreamRef.current;
+        localVideoRef.current.play?.().catch(() => {});
+      }
+      setCameraFacingMode(nextFacingMode);
+      setCallUiState((current) => ({ ...current, message: "" }));
+    } catch {
+      setCallUiState((current) => ({
+        ...current,
+        message: "Unable to switch camera on this device.",
+      }));
+    }
   }
 
   async function preparePeerConnection(callType) {
@@ -2571,7 +2701,10 @@ export default function DoctorDashboardPage() {
                     disabled={doctorHasCallInProgress}
                     onClick={() => handleStartDoctorCall("voice")}
                   >
-                    {"\u260E"} Voice Call
+                    <span className="call-control-button__content">
+                      <PhoneIcon />
+                      Voice Call
+                    </span>
                   </button>
                   <button
                     className="button button--secondary"
@@ -2579,7 +2712,10 @@ export default function DoctorDashboardPage() {
                     disabled={doctorHasCallInProgress}
                     onClick={() => handleStartDoctorCall("video")}
                   >
-                    {"\u25B6"} Video Call
+                    <span className="call-control-button__content">
+                      <VideoIcon />
+                      Video Call
+                    </span>
                   </button>
                   <button
                     aria-expanded={clinicalToolsOpen}
@@ -2610,6 +2746,16 @@ export default function DoctorDashboardPage() {
                       {tool.label}
                     </button>
                     ))}
+                    <button
+                      className="button button--secondary"
+                      type="button"
+                      onClick={() => {
+                        setTransferForm((current) => ({ ...current, open: !current.open }));
+                        setClinicalToolsOpen(false);
+                      }}
+                    >
+                      Transfer Patient
+                    </button>
                   </div>
                 </div>
               </aside>
@@ -2891,6 +3037,44 @@ export default function DoctorDashboardPage() {
                       </button>
                     </div>
 
+                    {transferForm.open ? (
+                      <form className="doctor-transfer-panel" onSubmit={handleRequestTransfer}>
+                        <label className="form-field">
+                          <span className="form-field__label">Receiving doctor</span>
+                          <select
+                            className="form-field__input"
+                            value={transferForm.toDoctorId}
+                            onChange={(event) => setTransferForm((current) => ({ ...current, toDoctorId: event.target.value }))}
+                          >
+                            <option value="">Select online doctor</option>
+                            {transferDoctors.map((item) => (
+                              <option key={item.doctor_id} value={item.doctor_id}>
+                                {formatDoctorDisplayName(item.name)} / {item.specialty}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="form-field form-field--grow">
+                          <span className="form-field__label">Handover note</span>
+                          <input
+                            className="form-field__input"
+                            value={transferForm.handoverNote}
+                            placeholder="Brief reason or clinical handover..."
+                            onChange={(event) => setTransferForm((current) => ({ ...current, handoverNote: event.target.value }))}
+                          />
+                        </label>
+                        <button className="button button--primary" type="submit" disabled={transferState.status === "loading"}>
+                          Send Request
+                        </button>
+                      </form>
+                    ) : null}
+                    {outgoingTransfers.length ? (
+                      <p className="doctor-transfer-note">Transfer request pending with {formatDoctorDisplayName(outgoingTransfers[0].to_doctor_name)}.</p>
+                    ) : null}
+                    {transferState.message ? (
+                      <p className={`doctor-transfer-note doctor-transfer-note--${transferState.status}`}>{transferState.message}</p>
+                    ) : null}
+
                     <div className="doctor-workspace__composer-sticky">
                       <form
                         className={
@@ -3019,6 +3203,43 @@ export default function DoctorDashboardPage() {
           </div>
         </aside>
       </section>
+
+      {incomingTransfers.length ? (
+        <SectionCard title="Transfer Requests">
+          <div className="queue-list">
+            {incomingTransfers.map((request) => (
+              <article key={request.transfer_id} className="queue-item">
+                <div className="queue-item__copy">
+                  <h3>Patient {request.patient_id}</h3>
+                  <p>
+                    {formatDoctorDisplayName(request.from_doctor_name)} is requesting a handover.
+                    {request.handover_note ? ` ${request.handover_note}` : ""}
+                  </p>
+                </div>
+                <div className="queue-item__meta">
+                  <StatusPill label="Transfer" tone="warning" />
+                  <button
+                    className="button button--primary"
+                    type="button"
+                    disabled={transferState.status === "loading"}
+                    onClick={() => handleTransferResponse(request.transfer_id, "accept")}
+                  >
+                    Accept
+                  </button>
+                  <button
+                    className="button button--secondary"
+                    type="button"
+                    disabled={transferState.status === "loading"}
+                    onClick={() => handleTransferResponse(request.transfer_id, "decline")}
+                  >
+                    Decline
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </SectionCard>
+      ) : null}
 
       {activeConsultation ? (
         <SectionCard

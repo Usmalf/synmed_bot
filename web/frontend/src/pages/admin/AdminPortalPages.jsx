@@ -5,8 +5,10 @@ import {
   approveDoctorApplication,
   assignAdminMedicalReportRequest,
   clearAdminPaymentAttention,
+  createAdminDoctorManual,
   createAdminPartner,
   createAdminHealthTip,
+  createAdminPatientManual,
   deleteAdminPaymentAttention,
   deleteAdminHealthTip,
   downloadAdminBackup,
@@ -18,6 +20,7 @@ import {
   fetchAdminDeploymentReadiness,
   fetchAdminConsultations,
   fetchAdminDeliverySettings,
+  fetchAdminDoctorEarnings,
   fetchAdminErrorLogs,
   fetchAdminHealthTips,
   fetchAdminMedicalReportRequests,
@@ -37,12 +40,14 @@ import {
   sendAdminPatientDocument,
   sendAdminMail,
   grantAdminConsultationAccess,
+  markAdminDoctorEarningPaid,
   revokeAdminConsultationAccess,
   searchAdminRecords,
   markAdminMailRead,
   suspendDoctorAccount,
   testAdminDelivery,
   updateAdminEmailBranding,
+  updateAdminDoctorPayoutPreference,
   updateAdminHealthTip,
   updateAdminPaymentSettings,
   updateAdminPartnerStatus,
@@ -317,16 +322,16 @@ export function AdminOverviewPage() {
   }, []);
 
   const metrics = [
-    ["Registered patients", state.summary?.registered_patients],
-    ["Verified doctors", state.summary?.verified_doctors],
-    ["Pending applications", state.summary?.pending_doctors],
-    ["Active consultations", state.summary?.active_consultations],
-    ["Medical reports", state.summary?.medical_report_requests],
-    ["Partners", state.summary?.partners],
-    ["Pending partners", state.summary?.pending_partners],
-    ["Verified customer agents", state.summary?.verified_customer_care_agents],
-    ["Pending customer agents", state.summary?.pending_customer_care_agents],
-    ["Due follow-ups", state.summary?.due_followups],
+    { label: "Registered patients", value: state.summary?.registered_patients, to: "/admin/patients" },
+    { label: "Verified doctors", value: state.summary?.verified_doctors, to: "/admin/doctors?filter=verified" },
+    { label: "Pending applications", value: state.summary?.pending_doctors, to: "/admin/doctors?filter=pending" },
+    { label: "Active consultations", value: state.summary?.active_consultations, to: "/admin/consultations?filter=active" },
+    { label: "Medical reports", value: state.summary?.medical_report_requests, to: "/admin/reports" },
+    { label: "Partners", value: state.summary?.partners, to: "/admin/partners" },
+    { label: "Pending partners", value: state.summary?.pending_partners, to: "/admin/partners?filter=pending" },
+    { label: "Verified customer agents", value: state.summary?.verified_customer_care_agents, to: "/customer-care?panel=accounts" },
+    { label: "Pending customer agents", value: state.summary?.pending_customer_care_agents, to: "/customer-care?panel=accounts" },
+    { label: "Due follow-ups", value: state.summary?.due_followups, to: "/admin/consultations?filter=followups" },
   ];
 
   return (
@@ -334,11 +339,12 @@ export function AdminOverviewPage() {
       <PageHeader showSearch title="Operations overview" actions={<button className="button button--secondary" type="button" onClick={load}>Refresh</button>} />
       <Notice state={state} />
       <section className="admin-metric-grid">
-        {metrics.map(([label, value]) => (
-          <article className="admin-metric" key={label}>
-            <span>{label}</span>
-            <strong>{value ?? "..."}</strong>
-          </article>
+        {metrics.map((metric) => (
+          <Link className="admin-metric admin-metric--link" key={metric.label} to={metric.to}>
+            <span>{metric.label}</span>
+            <strong>{metric.value ?? "..."}</strong>
+            <em>Open</em>
+          </Link>
         ))}
       </section>
 
@@ -385,6 +391,7 @@ export function AdminDoctorsPage() {
   const [page, setPage] = useState(1);
   const [dialog, setDialog] = useState(null);
   const [selectedDoctor, setSelectedDoctor] = useState(null);
+  const [manualDoctorForm, setManualDoctorForm] = useState(null);
   const [busy, setBusy] = useState(false);
 
   async function load(message = "") {
@@ -465,9 +472,54 @@ export function AdminDoctorsPage() {
     }
   }
 
+  function openManualDoctorForm() {
+    setManualDoctorForm({
+      name: "",
+      email: "",
+      phone: "",
+      specialty: "",
+      experience: "",
+      license_id: "",
+      license_expiry_date: "",
+      password: "",
+      license_file: null,
+    });
+  }
+
+  function updateManualDoctor(field, value) {
+    setManualDoctorForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function submitManualDoctor(event) {
+    event.preventDefault();
+    if (!manualDoctorForm) return;
+    setBusy(true);
+    setState((current) => ({ ...current, status: "loading", message: "Creating doctor application..." }));
+    try {
+      const result = await createAdminDoctorManual(manualDoctorForm);
+      setManualDoctorForm(null);
+      await load("Refreshing doctors...");
+      setFilter("pending");
+      setState((current) => ({ ...current, status: "success", message: result.message }));
+      window.dispatchEvent(new Event("synmed:admin-notifications-updated"));
+    } catch (error) {
+      setState((current) => ({ ...current, status: "error", message: error.message || "Unable to create doctor application." }));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <>
-      <PageHeader title="Doctors" actions={<button className="button button--secondary" type="button" onClick={() => load()}>Refresh</button>} />
+      <PageHeader
+        title="Doctors"
+        actions={(
+          <>
+            <button className="button button--primary" type="button" onClick={openManualDoctorForm}>Register Doctor</button>
+            <button className="button button--secondary" type="button" onClick={() => load()}>Refresh</button>
+          </>
+        )}
+      />
       <Notice state={state} />
       <DataPanel title="Doctor directory" subtitle={`${doctors.length} matching record(s)`}>
         <div className="admin-toolbar">
@@ -522,6 +574,34 @@ export function AdminDoctorsPage() {
         <Pager page={page} total={doctors.length} onChange={setPage} />
       </DataPanel>
       <ConfirmDialog dialog={dialog} busy={busy} onCancel={() => setDialog(null)} onConfirm={confirmAction} />
+      {manualDoctorForm ? (
+        <div className="admin-dialog-backdrop" role="presentation" onMouseDown={() => setManualDoctorForm(null)}>
+          <form className="admin-dialog admin-form" role="dialog" aria-modal="true" aria-labelledby="manual-doctor-title" onSubmit={submitManualDoctor} onMouseDown={(event) => event.stopPropagation()}>
+            <h2 id="manual-doctor-title">Register doctor</h2>
+            <div className="admin-form__row">
+              <label><span>Name</span><input required value={manualDoctorForm.name} onChange={(event) => updateManualDoctor("name", event.target.value)} /></label>
+              <label><span>Email</span><input required type="email" value={manualDoctorForm.email} onChange={(event) => updateManualDoctor("email", event.target.value)} /></label>
+            </div>
+            <div className="admin-form__row">
+              <label><span>Phone</span><input value={manualDoctorForm.phone} onChange={(event) => updateManualDoctor("phone", event.target.value)} /></label>
+              <label><span>Specialty</span><input required value={manualDoctorForm.specialty} onChange={(event) => updateManualDoctor("specialty", event.target.value)} /></label>
+            </div>
+            <div className="admin-form__row">
+              <label><span>Experience</span><input required value={manualDoctorForm.experience} onChange={(event) => updateManualDoctor("experience", event.target.value)} /></label>
+              <label><span>Licence ID</span><input required value={manualDoctorForm.license_id} onChange={(event) => updateManualDoctor("license_id", event.target.value)} /></label>
+            </div>
+            <div className="admin-form__row">
+              <label><span>Licence expiry</span><input type="date" value={manualDoctorForm.license_expiry_date} onChange={(event) => updateManualDoctor("license_expiry_date", event.target.value)} /></label>
+              <label><span>Temporary password</span><input required type="password" minLength="8" value={manualDoctorForm.password} onChange={(event) => updateManualDoctor("password", event.target.value)} /></label>
+            </div>
+            <label><span>Latest annual licence</span><input required type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" onChange={(event) => updateManualDoctor("license_file", event.target.files?.[0] || null)} /></label>
+            <div className="admin-dialog__actions">
+              <button className="button button--secondary" type="button" onClick={() => setManualDoctorForm(null)}>Cancel</button>
+              <button className="button button--primary" type="submit" disabled={busy}>{busy ? "Creating..." : "Create application"}</button>
+            </div>
+          </form>
+        </div>
+      ) : null}
       {selectedDoctor ? (
         <div className="admin-dialog-backdrop" role="presentation" onMouseDown={() => setSelectedDoctor(null)}>
           <section className="admin-record-card" role="dialog" aria-modal="true" aria-labelledby="doctor-record-title" onMouseDown={(event) => event.stopPropagation()}>
@@ -591,6 +671,8 @@ export function AdminPatientsPage() {
   const [detailState, setDetailState] = useState({ status: "idle", message: "", detail: null });
   const [doctors, setDoctors] = useState([]);
   const [sendForm, setSendForm] = useState(null);
+  const [manualPatientForm, setManualPatientForm] = useState(null);
+  const [busy, setBusy] = useState(false);
 
   async function load(search = query) {
     setState((current) => ({ ...current, status: "loading", message: "Loading patient records..." }));
@@ -652,10 +734,47 @@ export function AdminPatientsPage() {
     }
   }
 
+  function openManualPatientForm() {
+    setManualPatientForm({
+      name: "",
+      age: "",
+      gender: "",
+      phone: "",
+      email: "",
+      address: "",
+      allergy: "",
+      medical_conditions: "",
+    });
+  }
+
+  function updateManualPatient(field, value) {
+    setManualPatientForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function submitManualPatient(event) {
+    event.preventDefault();
+    if (!manualPatientForm) return;
+    setBusy(true);
+    setState((current) => ({ ...current, status: "loading", message: "Creating patient record..." }));
+    try {
+      const result = await createAdminPatientManual(manualPatientForm);
+      setManualPatientForm(null);
+      await load(query);
+      setState((current) => ({ ...current, status: "success", message: result.message }));
+    } catch (error) {
+      setState((current) => ({ ...current, status: "error", message: error.message || "Unable to create patient record." }));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const visible = state.patients.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   return (
     <>
-      <PageHeader title="Patients" />
+      <PageHeader
+        title="Patients"
+        actions={<button className="button button--primary" type="button" onClick={openManualPatientForm}>Register Patient</button>}
+      />
       <Notice state={state} />
       <DataPanel title="Patient directory" subtitle={`${state.patients.length} patient record(s)`}>
         <form className="admin-toolbar admin-toolbar--search" onSubmit={(event) => { event.preventDefault(); load(query); }}>
@@ -689,6 +808,31 @@ export function AdminPatientsPage() {
         </div>
         <Pager page={page} total={state.patients.length} onChange={setPage} />
       </DataPanel>
+      {manualPatientForm ? (
+        <div className="admin-dialog-backdrop" role="presentation" onMouseDown={() => setManualPatientForm(null)}>
+          <form className="admin-dialog admin-form" role="dialog" aria-modal="true" aria-labelledby="manual-patient-title" onSubmit={submitManualPatient} onMouseDown={(event) => event.stopPropagation()}>
+            <h2 id="manual-patient-title">Register patient</h2>
+            <div className="admin-form__row">
+              <label><span>Name</span><input required value={manualPatientForm.name} onChange={(event) => updateManualPatient("name", event.target.value)} /></label>
+              <label><span>Email</span><input required type="email" value={manualPatientForm.email} onChange={(event) => updateManualPatient("email", event.target.value)} /></label>
+            </div>
+            <div className="admin-form__row">
+              <label><span>Age</span><input required type="number" min="0" value={manualPatientForm.age} onChange={(event) => updateManualPatient("age", event.target.value)} /></label>
+              <label><span>Gender</span><select required value={manualPatientForm.gender} onChange={(event) => updateManualPatient("gender", event.target.value)}><option value="">Select gender</option><option>Female</option><option>Male</option><option>Prefer not to say</option></select></label>
+            </div>
+            <div className="admin-form__row">
+              <label><span>Phone</span><input required value={manualPatientForm.phone} onChange={(event) => updateManualPatient("phone", event.target.value)} /></label>
+              <label><span>Address</span><input value={manualPatientForm.address} onChange={(event) => updateManualPatient("address", event.target.value)} /></label>
+            </div>
+            <label><span>Allergies</span><input value={manualPatientForm.allergy} onChange={(event) => updateManualPatient("allergy", event.target.value)} /></label>
+            <label><span>Medical conditions</span><textarea rows="2" value={manualPatientForm.medical_conditions} onChange={(event) => updateManualPatient("medical_conditions", event.target.value)} /></label>
+            <div className="admin-dialog__actions">
+              <button className="button button--secondary" type="button" onClick={() => setManualPatientForm(null)}>Cancel</button>
+              <button className="button button--primary" type="submit" disabled={busy}>{busy ? "Creating..." : "Create patient"}</button>
+            </div>
+          </form>
+        </div>
+      ) : null}
       {detailState.detail ? (
         <div className="admin-dialog-backdrop" role="presentation" onMouseDown={closePatient}>
           <section className="admin-record-card" role="dialog" aria-modal="true" aria-labelledby="patient-record-title" onMouseDown={(event) => event.stopPropagation()}>
@@ -753,9 +897,10 @@ export function AdminPatientsPage() {
 }
 
 export function AdminConsultationsPage() {
+  const [searchParams] = useSearchParams();
   const [state, setState] = useState({ status: "loading", message: "Loading consultations...", consultations: [], selected: null });
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState(searchParams.get("filter") || "all");
   const [page, setPage] = useState(1);
 
   async function load() {
@@ -768,6 +913,13 @@ export function AdminConsultationsPage() {
     }
   }
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const requestedFilter = searchParams.get("filter");
+    if (requestedFilter) {
+      setStatusFilter(requestedFilter);
+      setPage(1);
+    }
+  }, [searchParams]);
 
   const filtered = useMemo(() => {
     const normalized = query.toLowerCase().trim();
@@ -846,10 +998,11 @@ export function AdminConsultationsPage() {
 
 export function AdminPaymentsPage() {
   const [searchParams] = useSearchParams();
-  const [state, setState] = useState({ status: "loading", message: "Loading payment ledger...", payments: [] });
+  const [state, setState] = useState({ status: "loading", message: "Loading payment ledger...", payments: [], paymentEvents: [] });
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState(searchParams.get("filter") || "all");
   const [page, setPage] = useState(1);
+  const [eventPage, setEventPage] = useState(1);
   const [grantForm, setGrantForm] = useState(null);
   const [dialog, setDialog] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -859,9 +1012,9 @@ export function AdminPaymentsPage() {
     setState((current) => ({ ...current, status: "loading", message: message || "Loading payment ledger..." }));
     try {
       const result = await fetchAdminPayments();
-      setState({ status: "success", message, payments: result.payments || [] });
+      setState({ status: "success", message, payments: result.payments || [], paymentEvents: result.payment_events || [] });
     } catch (error) {
-      setState({ status: "error", message: error.message || "Unable to load payments.", payments: [] });
+      setState({ status: "error", message: error.message || "Unable to load payments.", payments: [], paymentEvents: [] });
     }
   }
   useEffect(() => { load(); }, []);
@@ -879,6 +1032,7 @@ export function AdminPaymentsPage() {
     if (payment.source === "admin_grant") return "grants";
     if (payment.status === "no_payment") return "no_payment";
     if (payment.status === "verified") return "verified";
+    if (["refunded", "disputed", "reversed"].includes(payment.status)) return "exceptions";
     if (["initialized", "pending_verification"].includes(payment.status)) return "pending";
     return "failed";
   }
@@ -896,6 +1050,9 @@ export function AdminPaymentsPage() {
     if (payment.status === "verified" && !payment.access_active && payment.access_expires_at) return "Verified / access expired";
     if (payment.status === "verified") return "Verified";
     if (payment.status === "amount_mismatch") return "Amount mismatch";
+    if (payment.status === "refunded") return "Refunded";
+    if (payment.status === "disputed") return "Disputed";
+    if (payment.status === "reversed") return "Reversed";
     if (["initialized", "pending_verification"].includes(payment.status)) return "Pending Paystack";
     return formatAction(payment.status || "failed");
   }
@@ -905,6 +1062,7 @@ export function AdminPaymentsPage() {
     if (payment.status === "no_payment") return "neutral";
     if (payment.source === "admin_grant" && payment.access_active) return "success";
     if (["initialized", "pending_verification"].includes(payment.status)) return "warning";
+    if (["refunded", "reversed", "disputed"].includes(payment.status)) return "danger";
     return payment.status === "verified" ? "warning" : "danger";
   }
 
@@ -917,6 +1075,7 @@ export function AdminPaymentsPage() {
     });
   }, [state.payments, query, filter]);
   const visible = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const visibleEvents = state.paymentEvents.slice((eventPage - 1) * PAGE_SIZE, eventPage * PAGE_SIZE);
   const revenueSummary = useMemo(() => {
     const todayKey = new Date().toDateString();
     const isToday = (value) => {
@@ -929,12 +1088,14 @@ export function AdminPaymentsPage() {
     const currency = verifiedRevenueRows[0]?.currency || state.payments.find((payment) => payment.currency)?.currency || "NGN";
     const revenue = verifiedRevenueRows.reduce((total, payment) => total + Number(payment.amount || 0), 0);
     const pendingAttention = state.payments.filter((payment) => payment.status !== "verified" && payment.source !== "admin_grant").length;
+    const paymentExceptions = state.payments.filter((payment) => ["refunded", "disputed", "reversed"].includes(payment.status)).length;
     const manualGrantsToday = todayPayments.filter((payment) => payment.source === "admin_grant").length;
     return {
       currency,
       revenue,
       completedCount: verifiedRevenueRows.length,
       pendingAttention,
+      paymentExceptions,
       manualGrantsToday,
     };
   }, [state.payments]);
@@ -1096,6 +1257,10 @@ export function AdminPaymentsPage() {
           <strong>{revenueSummary.pendingAttention}</strong>
         </article>
         <article className="admin-metric">
+          <span>Refunds / disputes</span>
+          <strong>{revenueSummary.paymentExceptions}</strong>
+        </article>
+        <article className="admin-metric">
           <span>Manual grants today</span>
           <strong>{revenueSummary.manualGrantsToday}</strong>
         </article>
@@ -1109,6 +1274,7 @@ export function AdminPaymentsPage() {
             <option value="verified">Verified payments</option>
             <option value="pending">Pending Paystack</option>
             <option value="failed">Failed / mismatch</option>
+            <option value="exceptions">Refunded / disputed / reversed</option>
             <option value="no_payment">No payment</option>
             <option value="grants">Manual access grants</option>
             <option value="expired">Expired access</option>
@@ -1148,6 +1314,24 @@ export function AdminPaymentsPage() {
         </div>
         <Pager page={page} total={filtered.length} onChange={setPage} />
       </DataPanel>
+      <DataPanel title="Paystack event log" subtitle={`${state.paymentEvents.length} recent event(s)`}>
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead><tr><th>Event</th><th>Reference</th><th>Status</th><th>Amount</th><th>Processed</th></tr></thead>
+            <tbody>{visibleEvents.map((event) => (
+              <tr key={event.event_key}>
+                <td><strong>{formatAction(event.event_type)}</strong><span>{event.event_key}</span></td>
+                <td>{event.reference || "No reference"}</td>
+                <td><StatusPill label={formatAction(event.status || "unknown")} tone={["success", "verified"].includes(event.status) ? "success" : ["refund.processed", "refunded", "reversed", "lost"].includes(event.status) ? "danger" : "warning"} /></td>
+                <td>{event.amount === null || event.amount === undefined ? "N/A" : formatCurrency(event.amount, event.currency || "NGN")}</td>
+                <td>{formatDate(event.processed_at || event.created_at)}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+          {!visibleEvents.length ? <EmptyState>No Paystack webhook events have been recorded yet.</EmptyState> : null}
+        </div>
+        <Pager page={eventPage} total={state.paymentEvents.length} onChange={setEventPage} />
+      </DataPanel>
       {grantForm ? (
         <div className="admin-dialog-backdrop" role="presentation" onMouseDown={() => setGrantForm(null)}>
           <form className="admin-dialog admin-form" role="dialog" aria-modal="true" onSubmit={submitGrant} onMouseDown={(event) => event.stopPropagation()}>
@@ -1160,6 +1344,178 @@ export function AdminPaymentsPage() {
         </div>
       ) : null}
       <ConfirmDialog dialog={dialog} busy={busy} onCancel={() => setDialog(null)} onConfirm={clearAttention} />
+    </>
+  );
+}
+
+export function AdminDoctorEarningsPage() {
+  const [state, setState] = useState({
+    status: "loading",
+    message: "Loading doctor earnings...",
+    earnings: [],
+    summaries: [],
+    totals: { unpaid_amount: 0, paid_amount: 0, completed_consultations: 0 },
+    currency: "NGN",
+  });
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const [busy, setBusy] = useState("");
+
+  async function load(message = "") {
+    setState((current) => ({ ...current, status: "loading", message: message || "Loading doctor earnings..." }));
+    try {
+      const result = await fetchAdminDoctorEarnings();
+      setState({
+        status: "success",
+        message,
+        earnings: result.earnings || [],
+        summaries: result.summaries || [],
+        totals: result.totals || { unpaid_amount: 0, paid_amount: 0, completed_consultations: 0 },
+        currency: result.currency || "NGN",
+      });
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: "error",
+        message: error.message || "Unable to load doctor earnings.",
+        earnings: [],
+        summaries: [],
+      }));
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  const filtered = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    return state.earnings.filter((earning) => {
+      const matchesQuery = !normalized || [
+        earning.doctor_name,
+        earning.doctor_id,
+        earning.patient_name,
+        earning.patient_id,
+        earning.consultation_id,
+        earning.earning_id,
+      ].some((value) => String(value || "").toLowerCase().includes(normalized));
+      const matchesFilter = filter === "all" || earning.status === filter || earning.payout_preference === filter;
+      return matchesQuery && matchesFilter;
+    });
+  }, [state.earnings, query, filter]);
+
+  const visible = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  async function markPaid(earningId) {
+    setBusy(earningId);
+    try {
+      await markAdminDoctorEarningPaid(earningId);
+      await load("Doctor earning marked as paid.");
+    } catch (error) {
+      setState((current) => ({ ...current, status: "error", message: error.message || "Unable to mark earning as paid." }));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function updatePreference(doctorId, payoutPreference) {
+    setBusy(`preference:${doctorId}`);
+    try {
+      await updateAdminDoctorPayoutPreference(doctorId, payoutPreference);
+      await load("Doctor payout preference updated.");
+    } catch (error) {
+      setState((current) => ({ ...current, status: "error", message: error.message || "Unable to update payout preference." }));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return (
+    <>
+      <PageHeader title="Doctor Earnings" actions={<button className="button button--secondary" type="button" onClick={() => load()}>Refresh</button>} />
+      <Notice state={state} />
+      <section className="admin-metric-grid admin-payment-summary" aria-label="Doctor earnings summary">
+        <article className="admin-metric">
+          <span>Unpaid balance</span>
+          <strong>{formatCurrency(state.totals.unpaid_amount, state.currency)}</strong>
+        </article>
+        <article className="admin-metric">
+          <span>Paid out</span>
+          <strong>{formatCurrency(state.totals.paid_amount, state.currency)}</strong>
+        </article>
+        <article className="admin-metric">
+          <span>Completed consultations</span>
+          <strong>{state.totals.completed_consultations}</strong>
+        </article>
+        <article className="admin-metric">
+          <span>Doctors tracked</span>
+          <strong>{state.summaries.length}</strong>
+        </article>
+      </section>
+
+      <DataPanel title="Doctor payout preferences" subtitle={`${state.summaries.length} verified doctor(s)`}>
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead><tr><th>Doctor</th><th>Completed</th><th>Unpaid</th><th>Paid</th><th>Payout choice</th></tr></thead>
+            <tbody>{state.summaries.map((doctor) => (
+              <tr key={doctor.doctor_id}>
+                <td><strong>{doctor.doctor_name}</strong><span>{doctor.doctor_id}</span></td>
+                <td>{doctor.completed_consultations}</td>
+                <td>{formatCurrency(doctor.unpaid_amount, state.currency)}</td>
+                <td>{formatCurrency(doctor.paid_amount, state.currency)}</td>
+                <td>
+                  <select
+                    disabled={busy === `preference:${doctor.doctor_id}`}
+                    value={doctor.payout_preference || "weekly"}
+                    onChange={(event) => updatePreference(doctor.doctor_id, event.target.value)}
+                  >
+                    <option value="immediate">Immediate</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+                </td>
+              </tr>
+            ))}</tbody>
+          </table>
+          {!state.summaries.length ? <EmptyState>No verified doctors are available for payout tracking yet.</EmptyState> : null}
+        </div>
+      </DataPanel>
+
+      <DataPanel title="Earnings ledger" subtitle={`${filtered.length} matching earning(s)`}>
+        <div className="admin-toolbar">
+          <input type="search" placeholder="Search doctor, patient, consultation or earning ID" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} />
+          <select value={filter} onChange={(event) => { setFilter(event.target.value); setPage(1); }}>
+            <option value="all">All earnings</option>
+            <option value="unpaid">Unpaid</option>
+            <option value="paid">Paid</option>
+            <option value="immediate">Immediate payout</option>
+            <option value="weekly">Weekly payout</option>
+            <option value="monthly">Monthly payout</option>
+          </select>
+        </div>
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead><tr><th>Doctor</th><th>Patient</th><th>Consultation</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody>{visible.map((earning) => (
+              <tr key={earning.earning_id}>
+                <td><strong>{earning.doctor_name}</strong><span>{earning.doctor_id}</span></td>
+                <td>{earning.patient_name}<span>{earning.patient_id || "No hospital number"}</span></td>
+                <td>{earning.consultation_id}<span>{formatDate(earning.earned_at)}</span></td>
+                <td>{formatCurrency(earning.amount, earning.currency)}<span>{formatAction(earning.payout_preference)}</span></td>
+                <td><StatusPill label={formatAction(earning.status)} tone={earning.status === "paid" ? "success" : "warning"} /></td>
+                <td>
+                  {earning.status === "unpaid" ? (
+                    <button type="button" disabled={busy === earning.earning_id} onClick={() => markPaid(earning.earning_id)}>
+                      {busy === earning.earning_id ? "Marking..." : "Mark paid"}
+                    </button>
+                  ) : <span>{earning.marked_paid_at ? `Paid ${formatDate(earning.marked_paid_at)}` : "Paid"}</span>}
+                </td>
+              </tr>
+            ))}</tbody>
+          </table>
+          {!visible.length ? <EmptyState>No doctor earnings match this view.</EmptyState> : null}
+        </div>
+        <Pager page={page} total={filtered.length} onChange={setPage} />
+      </DataPanel>
     </>
   );
 }
@@ -1267,6 +1623,7 @@ export function AdminReportsPage() {
 }
 
 export function AdminPartnersPage() {
+  const [searchParams] = useSearchParams();
   const blankForm = {
     name: "",
     partner_type: "pharmacy",
@@ -1280,7 +1637,7 @@ export function AdminPartnersPage() {
   const [state, setState] = useState({ status: "loading", message: "Loading partners...", partners: [], summary: null });
   const [form, setForm] = useState(blankForm);
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState(searchParams.get("filter") || "all");
   const [busy, setBusy] = useState("");
 
   async function load() {
@@ -1294,6 +1651,12 @@ export function AdminPartnersPage() {
   }
 
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const requestedFilter = searchParams.get("filter");
+    if (requestedFilter) {
+      setFilter(requestedFilter);
+    }
+  }, [searchParams]);
 
   const filteredPartners = state.partners.filter((partner) => {
     const matchesFilter =

@@ -256,6 +256,22 @@
   padding: 0.85rem;
 }
 
+.admin-metric--link {
+  color: inherit;
+  cursor: pointer;
+  display: block;
+  text-decoration: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.admin-metric--link:hover,
+.admin-metric--link:focus-visible {
+  border-color: rgba(76, 195, 211, 0.5);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.18);
+  outline: none;
+  transform: translateY(-1px);
+}
+
 .admin-metric span {
   color: var(--color-muted);
   display: block;
@@ -267,6 +283,20 @@
   display: block;
   font-size: 1.65rem;
   margin-top: 0.45rem;
+}
+
+.admin-metric em {
+  color: #6ed6df;
+  display: block;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 800;
+  margin-top: 0.35rem;
+  text-transform: uppercase;
+}
+
+body[data-background-theme="light"] .admin-metric em {
+  color: #0c5d75;
 }
 
 .admin-payment-summary {

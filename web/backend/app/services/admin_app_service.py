@@ -2,10 +2,11 @@ from database import get_connection
 from services.backups import get_backup_status
 from services.followups import get_due_follow_up_reminders
 from services.operational_errors import get_operational_error_summary
-from services.patient_records import get_registered_patient_count
+from services.patient_records import get_patient_by_identifier, get_registered_patient_count, register_patient
 from services.paystack import (
     grant_manual_payment_override,
     is_payment_within_validity_window,
+    list_payment_events,
     revoke_manual_payment_override,
 )
 from datetime import datetime, timezone
@@ -13,8 +14,16 @@ import hashlib
 import json
 from .medical_report_app_service import list_admin_medical_report_requests
 from .partner_app_service import list_partner_facilities
-from synmed_utils.doctor_profiles import create_or_update_profile
-from .auth_service import get_delivery_status, send_email_with_attachment, send_plain_email
+from synmed_utils.doctor_profiles import create_or_update_profile, get_profile_by_identifier
+from .auth_service import (
+    _allocate_web_doctor_id,
+    _save_doctor_license_upload,
+    get_delivery_status,
+    hash_patient_password,
+    send_email_with_attachment,
+    send_patient_web_access_setup,
+    send_plain_email,
+)
 from .auth_service import _deliver_otp_checked as deliver_otp_checked
 from .internal_mail_service import send_internal_message
 from .settings_service import (
@@ -771,7 +780,7 @@ def list_admin_payments() -> dict:
         }
         for row in no_payment_rows
     ]
-    return {"payments": payments + no_payment}
+    return {"payments": payments + no_payment, "payment_events": list_payment_events()}
 
 
 def _ensure_payment_attention_table(cursor) -> None:
@@ -1221,6 +1230,154 @@ def list_pending_doctor_applications() -> list[dict]:
         }
         for row in rows
     ]
+
+
+def create_manual_patient_registration(admin_id: int, payload: dict) -> dict:
+    name = (payload.get("name") or "").strip()
+    age = str(payload.get("age") or "").strip()
+    gender = (payload.get("gender") or "").strip()
+    phone = (payload.get("phone") or "").strip()
+    email = (payload.get("email") or "").strip().lower()
+    address = (payload.get("address") or "").strip()
+    allergy = (payload.get("allergy") or "").strip()
+    medical_conditions = (payload.get("medical_conditions") or "").strip()
+
+    if not all([name, age, gender, phone, email]):
+        return {"created": False, "message": "Name, age, gender, phone, and email are required."}
+    try:
+        int(age)
+    except ValueError:
+        return {"created": False, "message": "Age must be a number."}
+
+    if get_patient_by_identifier(email):
+        return {"created": False, "message": "A patient already exists with this email."}
+    if get_patient_by_identifier(phone):
+        return {"created": False, "message": "A patient already exists with this phone number."}
+
+    patient = register_patient(
+        telegram_id=None,
+        name=name,
+        age=age,
+        gender=gender,
+        phone=phone,
+        email=email,
+        address=address,
+        allergy=allergy,
+        medical_conditions=medical_conditions,
+    )
+    setup = send_patient_web_access_setup(hospital_number=patient["hospital_number"], email=email)
+
+    return {
+        "created": True,
+        "message": (
+            "Patient record created and setup email sent."
+            if setup.get("delivered")
+            else "Patient record created, but setup email could not be delivered right now."
+        ),
+        "patient": patient,
+        "setup": setup,
+        "created_by": admin_id,
+    }
+
+
+def create_manual_doctor_registration(admin_id: int, payload: dict) -> dict:
+    name = (payload.get("name") or "").strip()
+    email = (payload.get("email") or "").strip().lower()
+    phone = (payload.get("phone") or "").strip()
+    specialty = (payload.get("specialty") or "").strip()
+    experience = (payload.get("experience") or "").strip()
+    license_id = (payload.get("license_id") or "").strip()
+    password = payload.get("password") or ""
+    license_file_data = payload.get("license_file_data") or ""
+    license_file_name = (payload.get("license_file_name") or "").strip() or "annual-licence"
+    license_file_type = (payload.get("license_file_type") or "").strip() or "application/octet-stream"
+    license_expiry_date = (payload.get("license_expiry_date") or "").strip()
+
+    if not all([name, email, specialty, experience, license_id, password]):
+        return {"created": False, "message": "Name, email, specialty, experience, licence ID, and temporary password are required."}
+    if len(password.strip()) < 8:
+        return {"created": False, "message": "Temporary password must be at least 8 characters long."}
+    if not license_file_data:
+        return {"created": False, "message": "Upload the doctor's latest annual licence."}
+
+    existing_doctor_id, existing_profile = get_profile_by_identifier(email)
+    if existing_doctor_id and existing_profile:
+        return {"created": False, "message": "A doctor account already exists with this email."}
+
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT telegram_id
+            FROM pending_doctor_requests
+            WHERE LOWER(COALESCE(email, '')) = ?
+              AND COALESCE(review_status, 'pending_review') = 'pending_review'
+            LIMIT 1
+            """,
+            (email,),
+        )
+        if cursor.fetchone():
+            return {"created": False, "message": "A pending doctor application already exists with this email."}
+
+    license_file_id, stored_file_type, stored_file_name, stored_file_size = _save_doctor_license_upload(
+        license_file_name,
+        license_file_type,
+        license_file_data,
+    )
+    doctor_id = _allocate_web_doctor_id()
+    submitted_at = _now_iso()
+    username = email.split("@", 1)[0]
+    password_hash = hash_patient_password(password)
+
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO pending_doctor_requests (
+                telegram_id, name, specialty, experience, license_id, username,
+                file_id, file_type, email, phone, password_hash, license_expiry_date,
+                review_status, submitted_at, license_file_name, license_file_size, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            (
+                doctor_id,
+                name,
+                specialty,
+                experience,
+                license_id,
+                username,
+                license_file_id,
+                stored_file_type,
+                email,
+                phone,
+                password_hash,
+                license_expiry_date,
+                submitted_at,
+                stored_file_name,
+                stored_file_size,
+            ),
+        )
+        conn.commit()
+
+    return {
+        "created": True,
+        "message": "Doctor application created. Review and approve it from pending applications.",
+        "doctor": {
+            "telegram_id": doctor_id,
+            "name": name,
+            "email": email,
+            "phone": phone,
+            "specialty": specialty,
+            "experience": experience,
+            "license_id": license_id,
+            "license_expiry_date": license_expiry_date,
+            "license_file_name": stored_file_name,
+            "submitted_at": submitted_at,
+            "category": "pending",
+        },
+        "created_by": admin_id,
+    }
 
 
 def approve_doctor_application(doctor_id: int) -> dict:

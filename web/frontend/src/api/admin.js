@@ -2,6 +2,15 @@ import { authHeaders } from "./auth.js";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
 export async function fetchAdminSummary() {
   const response = await fetch(`${API_BASE_URL}/admin/summary`, {
     headers: {
@@ -161,6 +170,37 @@ export async function fetchAdminPatients(query = "") {
   return body;
 }
 
+export async function createAdminPatientManual(payload) {
+  const response = await fetch(`${API_BASE_URL}/admin/patients/manual`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body?.detail || `Request failed: ${response.status}`);
+  return body;
+}
+
+export async function createAdminDoctorManual(form) {
+  const payload = { ...form };
+  if (form.license_file) {
+    payload.license_file_name = form.license_file.name;
+    payload.license_file_type = form.license_file.type;
+    payload.license_file_size = form.license_file.size;
+    payload.license_file_data = await fileToDataUrl(form.license_file);
+  }
+  delete payload.license_file;
+
+  const response = await fetch(`${API_BASE_URL}/admin/doctor-applications/manual`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body?.detail || `Request failed: ${response.status}`);
+  return body;
+}
+
 export async function fetchAdminPayments() {
   const response = await fetch(`${API_BASE_URL}/admin/payments`, {
     headers: { ...authHeaders() },
@@ -216,6 +256,36 @@ export async function clearAdminPaymentAttention() {
   const response = await fetch(`${API_BASE_URL}/admin/payments/attention/clear`, {
     method: "POST",
     headers: { ...authHeaders() },
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body?.detail || `Request failed: ${response.status}`);
+  return body;
+}
+
+export async function fetchAdminDoctorEarnings() {
+  const response = await fetch(`${API_BASE_URL}/admin/doctor-earnings`, {
+    headers: { ...authHeaders() },
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body?.detail || `Request failed: ${response.status}`);
+  return body;
+}
+
+export async function markAdminDoctorEarningPaid(earningId) {
+  const response = await fetch(`${API_BASE_URL}/admin/doctor-earnings/${encodeURIComponent(earningId)}/paid`, {
+    method: "POST",
+    headers: { ...authHeaders() },
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body?.detail || `Request failed: ${response.status}`);
+  return body;
+}
+
+export async function updateAdminDoctorPayoutPreference(doctorId, payoutPreference) {
+  const response = await fetch(`${API_BASE_URL}/admin/doctors/${encodeURIComponent(doctorId)}/payout-preference`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ payout_preference: payoutPreference }),
   });
   const body = await response.json();
   if (!response.ok) throw new Error(body?.detail || `Request failed: ${response.status}`);

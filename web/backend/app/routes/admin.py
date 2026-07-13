@@ -10,6 +10,8 @@ from ..services.admin_app_service import (
     approve_doctor_application,
     clear_attention_payments,
     create_health_tip,
+    create_manual_doctor_registration,
+    create_manual_patient_registration,
     delete_attention_payment,
     delete_health_tip,
     get_admin_consultation,
@@ -39,6 +41,11 @@ from ..services.admin_app_service import (
 )
 from ..services.admin_reminder_service import list_admin_email_reminders, send_admin_reminder_test
 from ..services.deployment_readiness_service import get_deployment_readiness
+from services.doctor_earnings import (
+    list_doctor_earnings,
+    mark_doctor_earning_paid,
+    set_doctor_payout_preference,
+)
 from ..services.medical_report_app_service import assign_medical_report_request, list_admin_medical_report_requests
 from ..services.partner_app_service import create_partner_facility, list_partner_facilities, update_partner_status
 from ..services.payment_app_service import verify_web_payment
@@ -73,6 +80,36 @@ class DoctorApplicationRejectPayload(BaseModel):
 
 class DoctorAccountActionPayload(BaseModel):
     reason: str = ""
+
+
+class ManualPatientRegistrationPayload(BaseModel):
+    name: str
+    age: str
+    gender: str
+    phone: str
+    email: str
+    address: str = ""
+    allergy: str = ""
+    medical_conditions: str = ""
+
+
+class ManualDoctorRegistrationPayload(BaseModel):
+    name: str
+    email: str
+    phone: str = ""
+    specialty: str
+    experience: str
+    license_id: str
+    license_expiry_date: str = ""
+    password: str
+    license_file_name: str = ""
+    license_file_type: str = ""
+    license_file_size: int | None = None
+    license_file_data: str = ""
+
+
+class DoctorPayoutPreferencePayload(BaseModel):
+    payout_preference: str
 
 
 class DeliveryTestPayload(BaseModel):
@@ -261,6 +298,22 @@ def admin_patients(query: str = "", limit: int = 100, session: dict = Depends(re
     return {"patients": list_admin_patients(query, limit)}
 
 
+@router.post("/patients/manual")
+def admin_create_manual_patient(payload: ManualPatientRegistrationPayload, session: dict = Depends(require_admin)):
+    result = create_manual_patient_registration(session["user_id"], payload.model_dump())
+    if not result["created"]:
+        raise HTTPException(status_code=400, detail=result["message"])
+    patient = result["patient"]
+    record_admin_audit(
+        session["user_id"],
+        "manual_patient_created",
+        "patient",
+        patient["hospital_number"],
+        {"email": patient.get("email"), "setup_delivered": result["setup"].get("delivered")},
+    )
+    return result
+
+
 @router.get("/payments")
 def admin_payments(session: dict = Depends(require_admin)):
     return list_admin_payments()
@@ -342,6 +395,37 @@ def admin_delete_payment_attention(payload: AdminPaymentAttentionDeletePayload, 
 def admin_clear_payment_attention(session: dict = Depends(require_admin)):
     result = clear_attention_payments(actor_role="admin", actor_id=session["user_id"])
     record_admin_audit(session["user_id"], "payment_attention_cleared", "payment", "attention")
+    return result
+
+
+@router.get("/doctor-earnings")
+def admin_doctor_earnings(session: dict = Depends(require_admin)):
+    return list_doctor_earnings()
+
+
+@router.post("/doctor-earnings/{earning_id}/paid")
+def admin_mark_doctor_earning_paid(earning_id: str, session: dict = Depends(require_admin)):
+    result = mark_doctor_earning_paid(earning_id, session["user_id"])
+    if not result["updated"]:
+        raise HTTPException(status_code=404, detail="Doctor earning could not be found.")
+    record_admin_audit(session["user_id"], "doctor_earning_marked_paid", "doctor_earning", earning_id)
+    return result
+
+
+@router.post("/doctors/{doctor_id}/payout-preference")
+def admin_update_doctor_payout_preference(
+    doctor_id: str,
+    payload: DoctorPayoutPreferencePayload,
+    session: dict = Depends(require_admin),
+):
+    result = set_doctor_payout_preference(doctor_id, payload.payout_preference)
+    record_admin_audit(
+        session["user_id"],
+        "doctor_payout_preference_updated",
+        "doctor",
+        doctor_id,
+        {"payout_preference": result["payout_preference"]},
+    )
     return result
 
 
@@ -533,6 +617,25 @@ def admin_approve_doctor_application(doctor_id: int, session: dict = Depends(req
     if not result["updated"]:
         raise HTTPException(status_code=404, detail=result["message"])
     record_admin_audit(session["user_id"], "doctor_application_approved", "doctor", doctor_id)
+    return result
+
+
+@router.post("/doctor-applications/manual")
+def admin_create_manual_doctor_application(
+    payload: ManualDoctorRegistrationPayload,
+    session: dict = Depends(require_admin),
+):
+    result = create_manual_doctor_registration(session["user_id"], payload.model_dump())
+    if not result["created"]:
+        raise HTTPException(status_code=400, detail=result["message"])
+    doctor = result["doctor"]
+    record_admin_audit(
+        session["user_id"],
+        "manual_doctor_application_created",
+        "doctor",
+        doctor["telegram_id"],
+        {"email": doctor.get("email"), "license_id": doctor.get("license_id")},
+    )
     return result
 
 

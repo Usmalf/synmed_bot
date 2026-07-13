@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from io import BytesIO
 
 from database import get_connection
+from services.doctor_earnings import ensure_doctor_earning_for_consultation
 
 
 UTC = timezone.utc
@@ -75,6 +76,7 @@ def close_consultation_record(consultation_id: str, payment_reference: str | Non
         event_type="consultation_closed",
         details="Consultation ended",
     )
+    ensure_doctor_earning_for_consultation(consultation_id)
 
 
 def set_doctor_private_notes(consultation_id: str, notes: str):

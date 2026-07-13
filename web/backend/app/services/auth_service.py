@@ -27,6 +27,8 @@ from services import storage_service
 TOKEN_TTL_SECONDS = 60 * 60 * 12
 OTP_TTL_SECONDS = 60 * 10
 EMAIL_VERIFY_TTL_SECONDS = 60 * 60 * 24
+LOGIN_FAILURE_LIMIT = 5
+LOGIN_LOCK_SECONDS = 60 * 15
 UTC = timezone.utc
 logger = logging.getLogger(__name__)
 
@@ -197,11 +199,179 @@ def _deliver_otp_checked(channel: str, delivery_target: str, code: str) -> bool:
     return True
 
 
+def _normalize_login_identifier(identifier: str) -> str:
+    return str(identifier or "").strip().lower()
+
+
+def _parse_auth_time(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed
+
+
+def _login_lock_message(locked_until: str | None = None) -> str:
+    locked_at = _parse_auth_time(locked_until)
+    if not locked_at:
+        return "Too many failed sign-in attempts. Please wait a few minutes or recover your password."
+    remaining_seconds = max(60, int((locked_at - datetime.now(UTC)).total_seconds()))
+    remaining_minutes = max(1, round(remaining_seconds / 60))
+    return f"Too many failed sign-in attempts. Please try again in about {remaining_minutes} minute(s) or recover your password."
+
+
+def _get_login_attempt(account_type: str, identifier: str) -> dict | None:
+    normalized_identifier = _normalize_login_identifier(identifier)
+    if not normalized_identifier:
+        return None
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT account_type, identifier, failed_count, first_failed_at,
+                   last_failed_at, locked_until, alert_sent_at
+            FROM auth_login_attempts
+            WHERE account_type = ? AND identifier = ?
+            """,
+            (account_type, normalized_identifier),
+        )
+        row = cursor.fetchone()
+    return dict(row) if row else None
+
+
+def _ensure_login_not_locked(account_type: str, identifier: str) -> None:
+    attempt = _get_login_attempt(account_type, identifier)
+    locked_until = attempt.get("locked_until") if attempt else None
+    locked_at = _parse_auth_time(locked_until)
+    if locked_at and locked_at > datetime.now(UTC):
+        raise HTTPException(status_code=429, detail=_login_lock_message(locked_until))
+
+
+def _reset_login_attempts(account_type: str, identifier: str) -> None:
+    normalized_identifier = _normalize_login_identifier(identifier)
+    if not normalized_identifier:
+        return
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM auth_login_attempts WHERE account_type = ? AND identifier = ?",
+            (account_type, normalized_identifier),
+        )
+        conn.commit()
+
+
+def _send_failed_login_alert(email: str, display_name: str, account_label: str) -> bool:
+    normalized_email = (email or "").strip().lower()
+    if not normalized_email:
+        return False
+    name = display_name or "SynMed user"
+    body = (
+        f"Hello {name},\n\n"
+        f"We noticed several failed sign-in attempts on your SynMed {account_label} account. "
+        "For your protection, sign-in has been paused briefly.\n\n"
+        "If this was you, please wait a few minutes and try again or use password recovery. "
+        "If this was not you, please change your password once you regain access.\n\n"
+        "Thank you,\nSynMed Telehealth"
+    )
+    try:
+        return send_plain_email(normalized_email, "Security notice for your SynMed account", body)
+    except Exception as exc:
+        logger.warning("Failed-login alert email failed for %s: %s", normalized_email, exc)
+        return False
+
+
+def _record_failed_login(
+    account_type: str,
+    identifier: str,
+    *,
+    email: str = "",
+    display_name: str = "",
+    account_label: str = "account",
+) -> None:
+    normalized_identifier = _normalize_login_identifier(identifier)
+    if not normalized_identifier:
+        return
+
+    now = _now_iso()
+    lock_until = ""
+    should_send_alert = False
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT failed_count, first_failed_at, locked_until, alert_sent_at
+            FROM auth_login_attempts
+            WHERE account_type = ? AND identifier = ?
+            """,
+            (account_type, normalized_identifier),
+        )
+        row = cursor.fetchone()
+        failed_count = int(row["failed_count"] or 0) + 1 if row else 1
+        first_failed_at = row["first_failed_at"] if row and row["first_failed_at"] else now
+        existing_lock = row["locked_until"] if row else ""
+        alert_sent_at = row["alert_sent_at"] if row else ""
+        locked_at = _parse_auth_time(existing_lock)
+        if failed_count >= LOGIN_FAILURE_LIMIT:
+            lock_until = existing_lock if locked_at and locked_at > datetime.now(UTC) else _future_iso(LOGIN_LOCK_SECONDS)
+            should_send_alert = not alert_sent_at
+            alert_sent_at = alert_sent_at or now
+
+        if row:
+            cursor.execute(
+                """
+                UPDATE auth_login_attempts
+                SET failed_count = ?, first_failed_at = ?, last_failed_at = ?,
+                    locked_until = ?, alert_sent_at = ?
+                WHERE account_type = ? AND identifier = ?
+                """,
+                (
+                    failed_count,
+                    first_failed_at,
+                    now,
+                    lock_until,
+                    alert_sent_at,
+                    account_type,
+                    normalized_identifier,
+                ),
+            )
+        else:
+            cursor.execute(
+                """
+                INSERT INTO auth_login_attempts (
+                    account_type, identifier, failed_count, first_failed_at,
+                    last_failed_at, locked_until, alert_sent_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (account_type, normalized_identifier, failed_count, first_failed_at, now, lock_until, alert_sent_at),
+            )
+        conn.commit()
+
+    if should_send_alert:
+        _send_failed_login_alert(email, display_name, account_label)
+
+    if lock_until:
+        raise HTTPException(status_code=429, detail=_login_lock_message(lock_until))
+
+
 def login_doctor(identifier: str, password: str, otp_channel: str = "telegram") -> dict:
     doctor_id, profile = _resolve_doctor_account(identifier)
+    _ensure_login_not_locked("doctor", str(doctor_id))
     stored_password_hash = profile.get("password_hash") or ""
     if not stored_password_hash or not hmac.compare_digest(stored_password_hash, _password_hash(password)):
+        _record_failed_login(
+            "doctor",
+            str(doctor_id),
+            email=profile.get("email") or "",
+            display_name=profile.get("name") or "Doctor",
+            account_label="doctor",
+        )
         raise HTTPException(status_code=403, detail="Doctor credentials are invalid.")
+    _reset_login_attempts("doctor", str(doctor_id))
 
     channel, delivery_target = _doctor_delivery_target(doctor_id, profile, otp_channel)
     code = _issue_otp_code()
@@ -757,9 +927,19 @@ def _login_customer_care_with_password(identifier: str, password: str) -> dict |
     account = get_customer_care_account_by_identifier(identifier)
     if not account or account.get("status") != "active":
         return None
+    account_identifier = str(account["account_id"])
+    _ensure_login_not_locked("customer_care", account_identifier)
     stored_password_hash = account.get("password_hash") or ""
     if not stored_password_hash or not hmac.compare_digest(stored_password_hash, _password_hash(password)):
+        _record_failed_login(
+            "customer_care",
+            account_identifier,
+            email=account.get("email") or "",
+            display_name=account.get("display_name") or "Customer care agent",
+            account_label="customer care",
+        )
         return None
+    _reset_login_attempts("customer_care", account_identifier)
 
     code = _issue_otp_code()
     delivery_target = account["email"]
@@ -822,11 +1002,20 @@ def login_patient(identifier: str, password: str, otp_channel: str = "email") ->
     patient = get_patient_by_identifier(identifier)
     if not patient:
         raise HTTPException(status_code=403, detail="Patient credentials are invalid.")
+    _ensure_login_not_locked("patient", patient["hospital_number"])
     if not patient.get("email_verified_at"):
         raise HTTPException(status_code=403, detail="Please verify your email address before signing in.")
     stored_password_hash = patient.get("password_hash") or ""
     if not stored_password_hash or not hmac.compare_digest(stored_password_hash, _password_hash(password)):
+        _record_failed_login(
+            "patient",
+            patient["hospital_number"],
+            email=patient.get("email") or "",
+            display_name=patient.get("name") or "Patient",
+            account_label="patient",
+        )
         raise HTTPException(status_code=403, detail="Patient credentials are invalid.")
+    _reset_login_attempts("patient", patient["hospital_number"])
     code = _issue_otp_code()
     channel, delivery_target = _patient_delivery_target(patient, otp_channel)
     _store_otp(role="patient_login", identifier=patient["hospital_number"], delivery_target=delivery_target, code=code)
@@ -1053,12 +1242,21 @@ def login_web_user(identifier: str, password: str) -> dict:
     patient = get_patient_by_identifier(normalized_identifier)
     patient_pending_verification = False
     if patient:
+        _ensure_login_not_locked("patient", patient["hospital_number"])
         stored_password_hash = patient.get("password_hash") or ""
         if stored_password_hash and hmac.compare_digest(stored_password_hash, _password_hash(password)):
             if not patient.get("email_verified_at"):
                 patient_pending_verification = True
             else:
                 return login_patient(normalized_identifier, password, "email")
+        else:
+            _record_failed_login(
+                "patient",
+                patient["hospital_number"],
+                email=patient.get("email") or "",
+                display_name=patient.get("name") or "Patient",
+                account_label="patient",
+            )
 
     try:
         doctor_id, profile = _resolve_doctor_account(normalized_identifier)
@@ -1066,10 +1264,18 @@ def login_web_user(identifier: str, password: str) -> dict:
         doctor_id = None
         profile = None
     if doctor_id and profile:
+        _ensure_login_not_locked("doctor", str(doctor_id))
         stored_password_hash = profile.get("password_hash") or ""
         if stored_password_hash and hmac.compare_digest(stored_password_hash, _password_hash(password)):
             preferred_channel = "email" if (profile.get("email") or "").strip() else "telegram"
             return login_doctor(normalized_identifier, password, preferred_channel)
+        _record_failed_login(
+            "doctor",
+            str(doctor_id),
+            email=profile.get("email") or "",
+            display_name=profile.get("name") or "Doctor",
+            account_label="doctor",
+        )
 
     admin_result = _login_admin_with_password(normalized_identifier, password)
     if admin_result:

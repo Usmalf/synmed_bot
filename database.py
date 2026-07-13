@@ -11,12 +11,15 @@ _POSTGRES_POOL_URL = ""
 
 AUTO_ID_COLUMNS = {
     "admin_audit_logs": "id",
+    "auth_login_attempts": "id",
     "auth_otps": "id",
     "clinical_letters": "id",
     "consultation_messages": "id",
     "consultation_timeline": "id",
     "consultations": "id",
     "customer_care_accounts": "account_id",
+    "doctor_earnings": "id",
+    "consultation_transfer_requests": "id",
     "doctor_ratings": "id",
     "doctor_reviews": "id",
     "doctors": "id",
@@ -28,6 +31,7 @@ AUTO_ID_COLUMNS = {
     "operational_error_logs": "id",
     "patient_consents": "id",
     "patients": "id",
+    "payment_events": "id",
     "payments": "id",
     "prescriptions": "id",
     "support_ticket_feedback": "id",
@@ -389,6 +393,21 @@ def init_db():
     """)
 
     cursor.execute("""
+    CREATE TABLE IF NOT EXISTS payment_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_key TEXT NOT NULL UNIQUE,
+        event_type TEXT NOT NULL,
+        reference TEXT,
+        status TEXT,
+        amount INTEGER,
+        currency TEXT,
+        payload_json TEXT NOT NULL,
+        processed_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )
+    """)
+
+    cursor.execute("""
     CREATE TABLE IF NOT EXISTS whatsapp_sessions (
         whatsapp_id TEXT PRIMARY KEY,
         name TEXT,
@@ -396,6 +415,32 @@ def init_db():
         payload_json TEXT,
         updated_at TEXT NOT NULL,
         created_at TEXT NOT NULL
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS doctor_payout_preferences (
+        doctor_id TEXT PRIMARY KEY,
+        payout_preference TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS doctor_earnings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        earning_id TEXT NOT NULL UNIQUE,
+        consultation_id TEXT NOT NULL UNIQUE,
+        doctor_id TEXT NOT NULL,
+        patient_id TEXT,
+        amount INTEGER NOT NULL,
+        currency TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payout_preference TEXT NOT NULL,
+        earned_at TEXT NOT NULL,
+        marked_paid_at TEXT,
+        marked_paid_by_admin_id TEXT,
+        notes TEXT
     )
     """)
 
@@ -551,6 +596,21 @@ def init_db():
         created_at TEXT NOT NULL,
         asset_path TEXT,
         asset_type TEXT
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS consultation_transfer_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        transfer_id TEXT NOT NULL UNIQUE,
+        consultation_id TEXT NOT NULL,
+        patient_id TEXT,
+        from_doctor_id TEXT NOT NULL,
+        to_doctor_id TEXT NOT NULL,
+        handover_note TEXT,
+        status TEXT NOT NULL,
+        requested_at TEXT NOT NULL,
+        responded_at TEXT
     )
     """)
 
@@ -927,6 +987,20 @@ def init_db():
             "context_json": "TEXT",
         },
     )
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS auth_login_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_type TEXT NOT NULL,
+        identifier TEXT NOT NULL,
+        failed_count INTEGER NOT NULL DEFAULT 0,
+        first_failed_at TEXT,
+        last_failed_at TEXT,
+        locked_until TEXT,
+        alert_sent_at TEXT,
+        UNIQUE(account_type, identifier)
+    )
+    """)
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS health_tips (

@@ -6,7 +6,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
 from services.operational_errors import log_exception
-from services.paystack import PaystackError, build_frontend_callback_url, verify_paystack_webhook_signature
+from services.paystack import (
+    PaystackError,
+    build_frontend_callback_url,
+    process_paystack_webhook,
+    verify_paystack_webhook_signature,
+)
 
 from ..deps import require_patient
 from ..schemas.payment import (
@@ -65,30 +70,19 @@ async def paystack_webhook(request: Request):
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=400, detail="Invalid Paystack webhook payload.") from exc
 
-    event_type = str(payload.get("event") or "").strip().lower()
-    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
-    reference = str(data.get("reference") or "").strip()
-    if event_type != "charge.success" or not reference:
-        return {"received": True, "processed": False, "reference": reference or None}
-
-    try:
-        result = await verify_web_payment(reference)
-    except Exception as exc:
-        log_exception(
-            exc,
-            source="payment_webhook_verification",
-            path="/payments/paystack-webhook",
-            method="POST",
-            status_code=502,
-        )
-        return {"received": True, "processed": False, "reference": reference, "error": "verification_failed"}
-
-    return {
-        "received": True,
-        "processed": bool(result.get("verified")),
-        "reference": reference,
-        "status": result.get("paystack_status"),
-    }
+    result = process_paystack_webhook(payload, raw_body)
+    if result.get("payment_status") == "verified" and result.get("reference"):
+        try:
+            await verify_web_payment(result["reference"])
+        except Exception as exc:
+            log_exception(
+                exc,
+                source="payment_webhook_whatsapp_followup",
+                path="/payments/paystack-webhook",
+                method="POST",
+                status_code=502,
+            )
+    return result
 
 
 @router.get("/web-return")

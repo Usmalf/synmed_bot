@@ -83,6 +83,38 @@ export async function endDoctorChat(doctorId) {
   return response.json();
 }
 
+export async function requestDoctorTransfer(payload) {
+  const response = await fetch(`${API_BASE_URL}/doctors/transfer`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+    },
+    body: JSON.stringify(payload),
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body?.detail || `Request failed: ${response.status}`);
+  }
+  return body;
+}
+
+export async function respondDoctorTransfer(transferId, action) {
+  const response = await fetch(`${API_BASE_URL}/doctors/transfer/${encodeURIComponent(transferId)}/respond`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+    },
+    body: JSON.stringify({ action }),
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body?.detail || `Request failed: ${response.status}`);
+  }
+  return body;
+}
+
 export async function startDoctorCall(payload) {
   const response = await fetch(`${API_BASE_URL}/doctors/call/start`, {
     method: "POST",

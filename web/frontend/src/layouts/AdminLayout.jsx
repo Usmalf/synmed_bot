@@ -10,6 +10,7 @@ const adminLinks = [
   { to: "/admin/patients", label: "Patients" },
   { to: "/admin/consultations", label: "Consultations" },
   { to: "/admin/payments", label: "Payments" },
+  { to: "/admin/doctor-earnings", label: "Doctor Earnings" },
   { to: "/admin/reports", label: "Medical Reports" },
   { to: "/admin/partners", label: "Partners" },
   { to: "/admin/ratings", label: "Ratings" },

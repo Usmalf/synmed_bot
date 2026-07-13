@@ -39,6 +39,21 @@
   resize: vertical;
 }
 
+.call-control-button__content {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.38rem;
+  justify-content: center;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.call-control-icon {
+  flex: 0 0 auto;
+  height: 1.05rem;
+  width: 1.05rem;
+}
+
 .password-input {
   display: block;
   position: relative;

@@ -19,6 +19,7 @@ import {
   AdminActivityPage,
   AdminConsultationsPage,
   AdminContentPage,
+  AdminDoctorEarningsPage,
   AdminDoctorsPage,
   AdminErrorsPage,
   AdminInboxPage,
@@ -565,6 +566,7 @@ export default function App() {
           <Route path="patients" element={<AdminPatientsPage />} />
           <Route path="consultations" element={<AdminConsultationsPage />} />
           <Route path="payments" element={<AdminPaymentsPage />} />
+          <Route path="doctor-earnings" element={<AdminDoctorEarningsPage />} />
           <Route path="reports" element={<AdminReportsPage />} />
           <Route path="partners" element={<AdminPartnersPage />} />
           <Route path="ratings" element={<AdminRatingsPage />} />

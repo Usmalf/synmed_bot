@@ -1,11 +1,14 @@
 import os
 import asyncio
 import json
+import hmac
+import hashlib
 import tempfile
 import unittest
 import zipfile
 from pathlib import Path
 from datetime import datetime, timezone
+from urllib.parse import parse_qs, urlparse
 from unittest.mock import AsyncMock, patch
 
 from database import PostgresCursor, get_connection, init_db
@@ -14,6 +17,7 @@ from services.analytics import get_admin_analytics
 from services import storage_service
 from services.backups import create_database_backup, create_full_backup_archive, get_backup_status
 from services.consultation_records import (
+    close_consultation_record,
     export_consultation_file,
     get_consultation_timeline,
     get_patient_history,
@@ -23,6 +27,8 @@ from services.consultation_records import (
     set_doctor_private_notes,
     start_consultation_record,
 )
+from services.doctor_earnings import list_doctor_earnings, mark_doctor_earning_paid
+from services.consultation_transfers import create_transfer_request, respond_to_transfer_request
 from services.clinical_documents import create_investigation_document, create_prescription_document
 from services.followups import (
     get_due_follow_up_reminders,
@@ -36,12 +42,24 @@ from services.patient_records import (
     search_patient_records,
     update_patient_record,
 )
-from services.paystack import create_payment_record, mark_payment_verified
+from services.paystack import (
+    create_payment_record,
+    get_payment_by_reference,
+    list_payment_events,
+    mark_payment_verified,
+    process_paystack_webhook,
+    verify_paystack_webhook_signature,
+)
 from synmed_utils.doctor_profiles import create_or_update_profile, doctor_profiles
 from synmed_utils.active_chats import active_chats, clear_runtime_state, last_consultation, start_chat
 import synmed_utils.doctor_registry as doctor_registry
 from synmed_utils.pending_doctors import pending_doctors
 import synmed_utils.support_registry as support_registry
+from web.backend.app.services.auth_service import (
+    complete_patient_web_access_setup,
+    login_patient,
+    send_patient_web_access_setup,
+)
 from web.backend.app.services.doctor_app_service import send_doctor_message
 from web.backend.app.services.payment_app_service import verify_web_payment
 from web.backend.app.services.whatsapp_service import (
@@ -92,6 +110,56 @@ class TestPersistenceStores(unittest.TestCase):
 
         self.assertIn("%s = '%%'", converted)
         self.assertIn("name LIKE '%%' || %s || '%%'", converted)
+
+    def test_paystack_webhook_signature_uses_configured_secret(self):
+        os.environ["PAYSTACK_SECRET_KEY"] = "test-secret"
+        self.addCleanup(lambda: os.environ.pop("PAYSTACK_SECRET_KEY", None))
+        raw_body = b'{"event":"charge.success"}'
+        signature = hmac.new(b"test-secret", raw_body, hashlib.sha512).hexdigest()
+
+        self.assertTrue(verify_paystack_webhook_signature(raw_body, signature))
+        self.assertFalse(verify_paystack_webhook_signature(raw_body, "bad-signature"))
+
+    def test_telegram_patient_can_complete_web_access_setup_and_login(self):
+        os.environ["FRONTEND_BASE_URL"] = "https://synmedhealth.com"
+        os.environ["AUTH_DEV_OTP_VISIBLE"] = "1"
+        self.addCleanup(lambda: os.environ.pop("FRONTEND_BASE_URL", None))
+        self.addCleanup(lambda: os.environ.pop("AUTH_DEV_OTP_VISIBLE", None))
+        patient = register_patient(
+            telegram_id=123456789,
+            name="Telegram Patient",
+            age="34",
+            gender="Female",
+            phone="08030000000",
+            email="telegram.patient@example.com",
+            address="Lagos",
+            allergy="",
+        )
+
+        with patch("web.backend.app.services.auth_service.send_plain_email", return_value=True):
+            setup = send_patient_web_access_setup(
+                hospital_number=patient["hospital_number"],
+                email=patient["email"],
+            )
+
+        self.assertTrue(setup["success"])
+        self.assertTrue(setup["delivered"])
+        token = parse_qs(urlparse(setup["setup_url"]).query)["token"][0]
+
+        completed = complete_patient_web_access_setup(patient["hospital_number"], token, "PatientPass123")
+        self.assertTrue(completed["success"])
+
+        updated = get_patient_by_identifier(patient["email"])
+        self.assertEqual(updated["hospital_number"], patient["hospital_number"])
+        self.assertTrue(updated["email_verified_at"])
+        self.assertTrue(updated["password_hash"])
+
+        with patch("web.backend.app.services.auth_service._deliver_otp_checked", return_value=True):
+            login = login_patient(patient["email"], "PatientPass123", "email")
+
+        self.assertTrue(login["success"])
+        self.assertEqual(login["role"], "patient")
+        self.assertEqual(login["delivery_target"], patient["email"])
 
     def test_whatsapp_reply_can_find_patient_and_open_support_ticket(self):
         patient = register_patient(
@@ -255,7 +323,6 @@ class TestPersistenceStores(unittest.TestCase):
             patient_type="returning",
             label="SynMed Consultation Fee",
         )
-        timestamp = datetime.now(timezone.utc).isoformat()
         with get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -268,8 +335,8 @@ class TestPersistenceStores(unittest.TestCase):
                     "WhatsApp Paid Patient",
                     "awaiting_payment",
                     json.dumps({"patient_id": patient["hospital_number"], "reference": "wa-auto-paid"}),
-                    timestamp,
-                    timestamp,
+                    datetime.now(timezone.utc).isoformat(),
+                    datetime.now(timezone.utc).isoformat(),
                 ),
             )
             conn.commit()
@@ -727,6 +794,43 @@ class TestPersistenceStores(unittest.TestCase):
         self.assertEqual(history["consultations"][0]["doctor_private_notes"], "Possible migraine with aura.")
         self.assertIn("Possible migraine with aura.", export["file"].getvalue().decode("utf-8"))
 
+    def test_closed_consultation_creates_doctor_earning_once(self):
+        os.environ["DOCTOR_CONSULTATION_EARNING_NGN"] = "1000"
+        self.addCleanup(lambda: os.environ.pop("DOCTOR_CONSULTATION_EARNING_NGN", None))
+        patient = register_patient(
+            telegram_id=6101,
+            name="Paid Patient",
+            age="34",
+            gender="Female",
+            phone="08010000019",
+            address="Ikeja",
+            allergy="None",
+        )
+        consultation_id = "consult-earning-1"
+        start_consultation_record(
+            consultation_id,
+            patient_record=patient,
+            doctor_id=7101,
+            summary="Symptoms / History: Fever",
+        )
+
+        close_consultation_record(consultation_id)
+        close_consultation_record(consultation_id)
+        ledger = list_doctor_earnings()
+
+        self.assertEqual(len(ledger["earnings"]), 1)
+        earning = ledger["earnings"][0]
+        self.assertEqual(earning["consultation_id"], consultation_id)
+        self.assertEqual(earning["doctor_id"], "7101")
+        self.assertEqual(earning["status"], "unpaid")
+        self.assertEqual(earning["amount"], 1000)
+
+        marked = mark_doctor_earning_paid(earning["earning_id"], admin_id=9001)
+        refreshed = list_doctor_earnings()
+
+        self.assertTrue(marked["updated"])
+        self.assertEqual(refreshed["earnings"][0]["status"], "paid")
+
     def test_admin_audit_log_persists_recent_actions(self):
         log_admin_action(
             admin_id=9001,
@@ -935,6 +1039,37 @@ class TestPersistenceStores(unittest.TestCase):
         self.assertIn(5001, active_chats)
         self.assertEqual(active_chats[5001], 9001)
         self.assertEqual(last_consultation[5001]["consultation_id"], consultation_id)
+
+    def test_doctor_transfer_preserves_active_consultation(self):
+        doctor_registry.clear_doctor_runtime_state()
+        active_chats.clear()
+        last_consultation.clear()
+        create_or_update_profile(9001, {"name": "Alpha", "specialty": "GP", "verified": True})
+        create_or_update_profile(9002, {"name": "Beta", "specialty": "GP", "verified": True})
+        patient_details = {
+            "hospital_number": "SM0001",
+            "name": "Transfer Patient",
+            "age": "29",
+            "gender": "Female",
+            "phone": "08010000051",
+            "address": "Ikeja",
+            "allergy": "None",
+            "history": "Headache",
+        }
+        doctor_registry.set_doctor_busy(9001, channel="web")
+        doctor_registry.set_doctor_available(9002, channel="web")
+        consultation_id = start_chat(5002, 9001, patient_details)
+
+        request = create_transfer_request(9001, 9002, "Please continue care.")
+        response = respond_to_transfer_request(9002, request["transfer_id"], "accept")
+
+        self.assertTrue(request["created"])
+        self.assertTrue(response["updated"])
+        self.assertEqual(active_chats[5002], 9002)
+        self.assertNotIn(9001, active_chats)
+        self.assertEqual(last_consultation[9002]["consultation_id"], consultation_id)
+        self.assertIn(9001, doctor_registry.available_doctors_by_channel["web"])
+        self.assertIn(9002, doctor_registry.busy_doctors_by_channel["web"])
 
     def test_runtime_support_state_can_be_restored_after_restart(self):
         support_registry.clear_runtime_state()

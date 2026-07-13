@@ -27,6 +27,8 @@ from ..schemas.doctor import (
     DoctorPrescriptionRequest,
     DoctorQueueConnectRequest,
     DoctorTranscriptResponse,
+    DoctorTransferRequest,
+    DoctorTransferResponseRequest,
     DoctorWorkspaceResponse,
 )
 from ..services.doctor_app_service import (
@@ -43,6 +45,8 @@ from ..services.doctor_app_service import (
     get_doctor_transcript,
     get_doctor_workspace,
     reject_doctor_call,
+    request_doctor_transfer,
+    respond_doctor_transfer,
     save_doctor_history_note,
     send_doctor_message,
     send_doctor_attachment,
@@ -135,6 +139,20 @@ def doctor_presence(payload: DoctorPresenceRequest, session: dict = Depends(requ
 @router.post("/connect", response_model=DoctorWorkspaceResponse)
 def doctor_connect(payload: DoctorQueueConnectRequest, session: dict = Depends(require_doctor)):
     return connect_doctor_to_selected_patient(session["user_id"], payload.runtime_patient_id)
+
+
+@router.post("/transfer", response_model=DoctorWorkspaceResponse)
+def doctor_transfer_request(payload: DoctorTransferRequest, session: dict = Depends(require_doctor)):
+    return request_doctor_transfer(session["user_id"], payload.to_doctor_id, payload.handover_note)
+
+
+@router.post("/transfer/{transfer_id}/respond", response_model=DoctorWorkspaceResponse)
+def doctor_transfer_response(
+    transfer_id: str,
+    payload: DoctorTransferResponseRequest,
+    session: dict = Depends(require_doctor),
+):
+    return respond_doctor_transfer(session["user_id"], transfer_id, payload.action)
 
 
 @router.get("/transcript", response_model=DoctorTranscriptResponse)

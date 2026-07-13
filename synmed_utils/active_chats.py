@@ -1,8 +1,10 @@
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
+from database import get_connection
 from services.consultation_records import (
     close_consultation_record,
+    log_consultation_event,
     log_consultation_message,
     start_consultation_record,
 )
@@ -125,6 +127,54 @@ def get_last_doctor(patient_id: int):
 def get_last_consultation(user_id: int):
     user_id = _runtime_id(user_id)
     return last_consultation.get(user_id)
+
+
+def transfer_chat_to_doctor(from_doctor_id: int, to_doctor_id: int, handover_note: str = ""):
+    from_doctor_id = _runtime_id(from_doctor_id)
+    to_doctor_id = _runtime_id(to_doctor_id)
+    consultation = last_consultation.get(from_doctor_id)
+    if not consultation or active_chats.get(from_doctor_id) != consultation.get("patient_id"):
+        return None
+
+    patient_id = consultation["patient_id"]
+    consultation["doctor_id"] = to_doctor_id
+    active_chats.pop(from_doctor_id, None)
+    active_chats[patient_id] = to_doctor_id
+    active_chats[to_doctor_id] = patient_id
+    last_consultation.pop(from_doctor_id, None)
+    last_consultation[patient_id] = consultation
+    last_consultation[to_doctor_id] = consultation
+    last_activity.pop(from_doctor_id, None)
+    now = _now()
+    last_activity[patient_id] = now
+    last_activity[to_doctor_id] = now
+
+    save_active_consultation(
+        consultation_id=consultation["consultation_id"],
+        patient_id=patient_id,
+        doctor_id=to_doctor_id,
+        patient_details=consultation.get("patient_details") or {},
+    )
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE consultations
+            SET doctor_id = ?, doctor_telegram_id = ?
+            WHERE consultation_id = ?
+            """,
+            (str(to_doctor_id), to_doctor_id, consultation["consultation_id"]),
+        )
+        conn.commit()
+
+    if handover_note.strip():
+        log_consultation_event(
+            consultation["consultation_id"],
+            event_type="consultation_transferred",
+            actor_id=str(from_doctor_id),
+            details=handover_note.strip(),
+        )
+    return consultation
 
 
 def touch_chat_activity(user_id: int):

@@ -54,6 +54,14 @@ When `DATABASE_URL` is set, the app uses PostgreSQL. `DATABASE_PATH` can remain 
 
 `AUTH_SECRET_KEY` is part of password hashing and OTP/session signing. Do not rotate it casually after users have registered. If migrating from SQLite to PostgreSQL, keep the same value that created the existing passwords.
 
+Paystack webhook URL:
+
+```text
+https://your-backend-domain/payments/paystack-webhook
+```
+
+Set this in the Paystack dashboard so SynMed can receive refund, dispute, reversal, and payment lifecycle events. The backend verifies each webhook with `PAYSTACK_SECRET_KEY`.
+
 ## Frontend
 
 Build command:

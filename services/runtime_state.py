@@ -228,7 +228,7 @@ def load_active_consultations():
         stale_consultation_ids = [
             row["consultation_id"]
             for row in rows
-            if row["consultation_status"] != "active"
+            if (row["consultation_status"] is not None and row["consultation_status"] != "active")
             or not _presence_has_status(row["doctor_presence_status"], "web", "busy")
         ]
         if stale_consultation_ids:
@@ -241,7 +241,7 @@ def load_active_consultations():
     active_rows = [
         row
         for row in rows
-        if row["consultation_status"] == "active"
+        if (row["consultation_status"] is None or row["consultation_status"] == "active")
         and _presence_has_status(row["doctor_presence_status"], "web", "busy")
     ]
     active_rows.sort(key=lambda row: row["consultation_created_at"] or "", reverse=True)

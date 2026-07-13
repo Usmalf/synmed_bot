@@ -85,15 +85,6 @@ def build_backend_callback_url(path: str, params: dict | None = None) -> str:
     return url
 
 
-def verify_paystack_webhook_signature(raw_body: bytes, signature: str | None) -> bool:
-    secret = os.getenv("PAYSTACK_SECRET_KEY", "").strip()
-    received = (signature or "").strip()
-    if not secret or not received:
-        return False
-    digest = hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha512).hexdigest()
-    return hmac.compare_digest(digest, received)
-
-
 def create_payment_reference(prefix: str = "synmed") -> str:
     return f"{prefix}-{uuid4().hex[:16]}"
 
@@ -185,6 +176,178 @@ def mark_payment_status(reference: str, *, status: str, paystack_status: str):
             (status, paystack_status, reference),
         )
         conn.commit()
+
+
+def record_payment_event(
+    *,
+    event_key: str,
+    event_type: str,
+    reference: str | None,
+    status: str | None,
+    amount: int | None,
+    currency: str | None,
+    payload: dict,
+) -> bool:
+    now = _now_iso()
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                """
+                INSERT INTO payment_events (
+                    event_key, event_type, reference, status, amount, currency,
+                    payload_json, processed_at, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_key,
+                    event_type,
+                    reference,
+                    status,
+                    amount,
+                    currency,
+                    json.dumps(payload),
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+            return True
+        except Exception:
+            conn.rollback()
+            return False
+
+
+def verify_paystack_webhook_signature(raw_body: bytes, signature: str | None) -> bool:
+    secret = os.getenv("PAYSTACK_SECRET_KEY", "").strip()
+    received = (signature or "").strip()
+    if not secret or not received:
+        return False
+    digest = hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha512).hexdigest()
+    return hmac.compare_digest(digest, received)
+
+
+def _payment_reference_from_event(data: dict) -> str:
+    candidates = [
+        data.get("reference"),
+        data.get("transaction_reference"),
+        data.get("refund_reference"),
+        (data.get("transaction") or {}).get("reference") if isinstance(data.get("transaction"), dict) else None,
+        (data.get("metadata") or {}).get("reference") if isinstance(data.get("metadata"), dict) else None,
+    ]
+    for candidate in candidates:
+        if candidate:
+            return str(candidate).strip()
+    return ""
+
+
+def _event_key(payload: dict, raw_body: bytes) -> str:
+    candidates = [
+        payload.get("id"),
+        payload.get("event_id"),
+        (payload.get("data") or {}).get("id") if isinstance(payload.get("data"), dict) else None,
+    ]
+    for candidate in candidates:
+        if candidate:
+            return str(candidate)
+    return hashlib.sha256(raw_body).hexdigest()
+
+
+def _paystack_amount_ngn(data: dict) -> int | None:
+    value = data.get("amount")
+    if value is None and isinstance(data.get("transaction"), dict):
+        value = data["transaction"].get("amount")
+    try:
+        return int(value) // 100
+    except (TypeError, ValueError):
+        return None
+
+
+def _paystack_currency(data: dict) -> str | None:
+    value = data.get("currency")
+    if value is None and isinstance(data.get("transaction"), dict):
+        value = data["transaction"].get("currency")
+    return str(value) if value else None
+
+
+def _payment_status_for_event(event_type: str, data: dict) -> tuple[str | None, str]:
+    normalized = (event_type or "").strip().lower()
+    data_status = str(data.get("status") or "").strip().lower()
+    if normalized == "charge.success":
+        return "verified", "success"
+    if normalized in {"refund.processed", "charge.refunded"}:
+        return "refunded", data_status or normalized
+    if normalized in {"refund.failed"}:
+        return None, data_status or normalized
+    if normalized.startswith("charge.dispute"):
+        if "resolve" in normalized and data_status in {"won", "resolved", "successful"}:
+            return "verified", data_status
+        if "resolve" in normalized and data_status in {"lost", "refunded"}:
+            return "reversed", data_status
+        return "disputed", data_status or normalized
+    if normalized in {"transfer.reversed", "transfer.failed"}:
+        return "reversed", data_status or normalized
+    return None, data_status or normalized or "unknown"
+
+
+def process_paystack_webhook(payload: dict, raw_body: bytes) -> dict:
+    event_type = str(payload.get("event") or "").strip()
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    reference = _payment_reference_from_event(data)
+    amount = _paystack_amount_ngn(data)
+    currency = _paystack_currency(data)
+    next_status, paystack_status = _payment_status_for_event(event_type, data)
+    event_key = _event_key(payload, raw_body)
+    inserted = record_payment_event(
+        event_key=event_key,
+        event_type=event_type or "unknown",
+        reference=reference or None,
+        status=paystack_status,
+        amount=amount,
+        currency=currency,
+        payload=payload,
+    )
+
+    payment_updated = False
+    if inserted and reference and next_status:
+        if next_status == "verified":
+            payment = get_payment_by_reference(reference)
+            mark_payment_verified(
+                reference,
+                paystack_status=paystack_status,
+                patient_id=(payment["patient_id"] if payment else None),
+            )
+        else:
+            mark_payment_status(reference, status=next_status, paystack_status=paystack_status)
+        payment_updated = True
+
+    return {
+        "received": True,
+        "inserted": inserted,
+        "event": event_type or "unknown",
+        "reference": reference or None,
+        "payment_status": next_status,
+        "payment_updated": payment_updated,
+    }
+
+
+def list_payment_events(limit: int = 100) -> list[dict]:
+    safe_limit = max(1, min(int(limit or 100), 250))
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                event_key, event_type, reference, status, amount, currency,
+                processed_at, created_at
+            FROM payment_events
+            ORDER BY datetime(processed_at) DESC, id DESC
+            LIMIT ?
+            """,
+            (safe_limit,),
+        )
+        return [dict(row) for row in cursor.fetchall()]
 
 
 def get_payment_by_reference(reference: str):

@@ -3,6 +3,7 @@ import tempfile
 from types import SimpleNamespace
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import AsyncMock, patch
+from telegram.ext import ApplicationHandlerStop
 
 from database import init_db
 from bot import route_priority_text_inputs
@@ -168,7 +169,8 @@ class TestConsultationFlow(IsolatedAsyncioTestCase):
         update = make_update(101, text="hi")
         context = make_context()
 
-        await route_priority_text_inputs(update, context)
+        with self.assertRaises(ApplicationHandlerStop):
+            await route_priority_text_inputs(update, context)
 
         update.message.reply_text.assert_awaited_once()
 
@@ -270,7 +272,10 @@ class TestConsultationFlow(IsolatedAsyncioTestCase):
             get_patient_by_identifier("08012345678")["hospital_number"],
             "SM0001",
         )
-        self.assertEqual(context.bot.send_message.await_count, 1)
+        self.assertEqual(context.bot.send_message.await_count, 2)
+        sent_messages = [call.kwargs["text"] for call in context.bot.send_message.await_args_list]
+        self.assertIn("web-access setup link", sent_messages[0])
+        self.assertIn("Now describe your medical history / symptoms.", sent_messages[1])
 
     async def test_doctor_on_consumes_waiting_patient_and_preserves_details(self):
         patient_id = 101
