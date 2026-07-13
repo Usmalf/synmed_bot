@@ -7,7 +7,7 @@ from services.operational_errors import log_exception, log_operational_error
 from ..services.whatsapp_service import (
     WhatsAppConfigurationError,
     build_whatsapp_reply,
-    send_text_message,
+    send_whatsapp_response,
 )
 
 
@@ -119,7 +119,7 @@ async def receive_whatsapp_webhook(request: Request):
         try:
             reply = await build_whatsapp_reply(message["text"], message.get("name", ""), message.get("from", ""))
             if reply:
-                await send_text_message(message["from"], reply)
+                await send_whatsapp_response(message["from"], reply)
                 reply_count += 1
         except WhatsAppConfigurationError as exc:
             log_exception(

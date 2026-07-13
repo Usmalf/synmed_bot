@@ -44,7 +44,13 @@ from synmed_utils.pending_doctors import pending_doctors
 import synmed_utils.support_registry as support_registry
 from web.backend.app.services.doctor_app_service import send_doctor_message
 from web.backend.app.services.payment_app_service import verify_web_payment
-from web.backend.app.services.whatsapp_service import build_keyword_reply, build_whatsapp_reply, send_patient_document_notice
+from web.backend.app.services.whatsapp_service import (
+    build_basic_menu,
+    build_keyword_reply,
+    build_whatsapp_reply,
+    send_patient_document_notice,
+    send_whatsapp_response,
+)
 from web.backend.app.routes.payments import whatsapp_payment_return
 from web.backend.app.routes.whatsapp import _extract_text_messages
 
@@ -123,6 +129,18 @@ class TestPersistenceStores(unittest.TestCase):
         self.assertEqual(ticket["topic"], "whatsapp")
         self.assertEqual(ticket["status"], "open")
         self.assertIn("WhatsApp sender: 2348107840312", ticket["summary"])
+
+    def test_whatsapp_welcome_menu_sends_interactive_options(self):
+        menu = build_basic_menu("Ada")
+
+        with (
+            patch("web.backend.app.services.whatsapp_service.send_menu_options_message", new_callable=AsyncMock) as mocked_menu,
+            patch("web.backend.app.services.whatsapp_service.send_text_message", new_callable=AsyncMock) as mocked_text,
+        ):
+            asyncio.run(send_whatsapp_response("2348107840312", menu))
+
+        mocked_menu.assert_awaited_once_with("2348107840312", menu)
+        mocked_text.assert_not_awaited()
 
     def test_whatsapp_can_send_web_setup_link_for_existing_patient(self):
         patient = register_patient(

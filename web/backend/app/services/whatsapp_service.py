@@ -115,6 +115,10 @@ def build_basic_menu(name: str = "") -> str:
     )
 
 
+def _is_basic_menu_reply(message: str) -> bool:
+    return "Welcome to SynMed Telehealth. How can we help you today?" in (message or "")
+
+
 def _frontend_base_url() -> str:
     return os.getenv("FRONTEND_BASE_URL", "").strip().rstrip("/") or "https://synmedhealth.com"
 
@@ -1118,6 +1122,58 @@ async def send_rating_options_message(to: str) -> dict:
         )
     response.raise_for_status()
     return response.json()
+
+
+async def send_menu_options_message(to: str, message: str) -> dict:
+    token = _access_token()
+    phone_number_id = _phone_number_id()
+    if not token or not phone_number_id:
+        raise WhatsAppConfigurationError("WhatsApp access token or phone number ID is not configured.")
+
+    url = f"https://graph.facebook.com/{WHATSAPP_API_VERSION}/{phone_number_id}/messages"
+    rows = [
+        {"id": "1", "title": "Register / sign in", "description": "Create or access your SynMed account."},
+        {"id": "2", "title": "Start consultation", "description": "Begin a doctor consultation."},
+        {"id": "3", "title": "Payment support", "description": "Get help with payment or access."},
+        {"id": "4", "title": "Medical report", "description": "Request or ask about a medical report."},
+        {"id": "5", "title": "Customer care", "description": "Send your issue to support."},
+        {"id": "6", "title": "Continue on web", "description": "Open the SynMed website."},
+        {"id": "7", "title": "WhatsApp guide", "description": "See how consultation works here."},
+    ]
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to,
+        "type": "interactive",
+        "interactive": {
+            "type": "list",
+            "body": {"text": message},
+            "action": {
+                "button": "Choose option",
+                "sections": [{"title": "SynMed options", "rows": rows}],
+            },
+        },
+    }
+    async with httpx.AsyncClient(timeout=20) as client:
+        response = await client.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+    response.raise_for_status()
+    return response.json()
+
+
+async def send_whatsapp_response(to: str, message: str) -> dict:
+    if _is_basic_menu_reply(message):
+        try:
+            return await send_menu_options_message(to, message)
+        except httpx.HTTPError:
+            return await send_text_message(to, message)
+    return await send_text_message(to, message)
 
 
 async def send_document_message(to: str, document_url: str, filename: str, caption: str = "") -> dict:
