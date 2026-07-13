@@ -2538,6 +2538,14 @@ body[data-background-theme="light"] .doctor-sidebar__account button:hover {
     width: 100%;
   }
 
+  .doctor-chat-actions--sticky > .button .call-control-button__label {
+    display: none;
+  }
+
+  .doctor-chat-actions--sticky > .button .call-control-button__content {
+    justify-content: center;
+  }
+
   .doctor-clinical-tools-toggle {
     align-items: center;
     background: rgba(255, 255, 255, 0.06);

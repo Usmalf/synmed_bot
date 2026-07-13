@@ -1767,9 +1767,18 @@ body[data-background-theme="light"] .consultation-room__sidebar .consultation-mo
     border-radius: 999px;
     box-shadow: 0 12px 26px rgba(0, 0, 0, 0.16);
     font-size: 0.72rem;
+    height: 38px;
     min-height: 34px;
-    padding: 0.34rem 0.58rem;
-    width: auto;
+    padding: 0.34rem;
+    width: 38px;
+  }
+
+  .consultation-room__sidebar .consultation-callbar__actions .button .call-control-button__label {
+    display: none;
+  }
+
+  .consultation-room__sidebar .consultation-callbar__actions .button .call-control-button__content {
+    justify-content: center;
   }
 
   body[data-background-theme="light"] .consultation-room__sidebar .consultation-callbar__actions .button {

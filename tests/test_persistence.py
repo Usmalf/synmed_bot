@@ -27,6 +27,7 @@ from services.consultation_records import (
     set_doctor_private_notes,
     start_consultation_record,
 )
+from services.consent import record_patient_consent
 from services.doctor_earnings import list_doctor_earnings, mark_doctor_earning_paid
 from services.consultation_transfers import create_transfer_request, respond_to_transfer_request
 from services.clinical_documents import create_investigation_document, create_prescription_document
@@ -92,6 +93,9 @@ class TestPersistenceStores(unittest.TestCase):
             pass
         except PermissionError:
             pass
+
+    def _record_whatsapp_consent(self, whatsapp_id: str = "2348107840312"):
+        record_patient_consent(int(whatsapp_id), channel="whatsapp")
 
     def test_postgres_sql_conversion_escapes_literal_percent(self):
         cursor = PostgresCursor(None, None)
@@ -198,6 +202,28 @@ class TestPersistenceStores(unittest.TestCase):
         self.assertEqual(ticket["status"], "open")
         self.assertIn("WhatsApp sender: 2348107840312", ticket["summary"])
 
+    def test_whatsapp_record_lookup_requires_matching_sender_phone(self):
+        patient = register_patient(
+            telegram_id=None,
+            name="Private Patient",
+            age="34",
+            gender="Female",
+            phone="08107840312",
+            email="private.patient@example.com",
+            address="Lagos",
+            allergy="",
+        )
+
+        allowed_reply = build_keyword_reply(f"record {patient['hospital_number']}", sender="2348107840312")
+        blocked_reply = build_keyword_reply(f"record {patient['hospital_number']}", sender="2348000000000")
+        blocked_setup_reply = build_keyword_reply(f"setup {patient['hospital_number']}", sender="2348000000000")
+
+        self.assertIn("Private Patient", allowed_reply)
+        self.assertIn("For privacy", blocked_reply)
+        self.assertNotIn("Private Patient", blocked_reply)
+        self.assertIn("For privacy", blocked_setup_reply)
+        self.assertNotIn("setup link", blocked_setup_reply)
+
     def test_whatsapp_welcome_menu_sends_interactive_options(self):
         menu = build_basic_menu("Ada")
 
@@ -209,6 +235,27 @@ class TestPersistenceStores(unittest.TestCase):
 
         mocked_menu.assert_awaited_once_with("2348107840312", menu)
         mocked_text.assert_not_awaited()
+
+    def test_whatsapp_requires_consent_before_menu(self):
+        prompt = asyncio.run(build_whatsapp_reply("hi", name="Consent User", sender="2348107840312"))
+
+        self.assertIn("Consent Policy", prompt)
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT state, payload_json FROM whatsapp_sessions WHERE whatsapp_id = ?", ("2348107840312",))
+            session = cursor.fetchone()
+        self.assertEqual(session["state"], "awaiting_consent")
+        self.assertIn("menu", session["payload_json"])
+
+        reply = asyncio.run(build_whatsapp_reply("consent:agree", name="Consent User", sender="2348107840312"))
+
+        self.assertIn("consent has been recorded", reply)
+        self.assertIn("Welcome to SynMed Telehealth", reply)
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT channel FROM patient_consents WHERE telegram_id = ?", (2348107840312,))
+            consent = cursor.fetchone()
+        self.assertEqual(consent["channel"], "whatsapp")
 
     def test_whatsapp_can_send_web_setup_link_for_existing_patient(self):
         patient = register_patient(
@@ -268,6 +315,7 @@ class TestPersistenceStores(unittest.TestCase):
         self.assertIn("prescription is ready", caption)
 
     def test_whatsapp_patient_can_queue_consultation_with_active_payment(self):
+        self._record_whatsapp_consent()
         patient = register_patient(
             telegram_id=None,
             name="WhatsApp Queue Patient",
@@ -378,6 +426,7 @@ class TestPersistenceStores(unittest.TestCase):
         self.assertIn("paid%20wa-return-test", response.headers["location"])
 
     def test_whatsapp_wrong_registration_response_keeps_step_and_start_resets(self):
+        self._record_whatsapp_consent()
         timestamp = datetime.now(timezone.utc).isoformat()
         with get_connection() as conn:
             cursor = conn.cursor()
@@ -548,6 +597,7 @@ class TestPersistenceStores(unittest.TestCase):
         self.assertEqual(rating["rating"], 5)
 
     def test_whatsapp_stale_queue_session_is_cleared_after_consultation_ends(self):
+        self._record_whatsapp_consent()
         patient = register_patient(
             telegram_id=None,
             name="WhatsApp Stale Queue Patient",

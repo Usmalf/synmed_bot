@@ -8,6 +8,7 @@ import httpx
 from database import get_connection
 from services.emergency import detect_emergency
 from services.consultation_records import log_consultation_message
+from services.consent import CONSENT_POLICY_TEXT, CONSENT_SUMMARY, has_patient_consented, record_patient_consent
 from services.patient_records import get_patient_by_identifier, register_patient
 from services.ratings_service import add_rating, add_review, has_rating, has_review
 from services.paystack import (
@@ -117,6 +118,48 @@ def build_basic_menu(name: str = "") -> str:
 
 def _is_basic_menu_reply(message: str) -> bool:
     return "Welcome to SynMed Telehealth. How can we help you today?" in (message or "")
+
+
+def _whatsapp_consent_subject(whatsapp_id: str) -> int:
+    digits = _digits(whatsapp_id)
+    try:
+        return int(digits)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _has_whatsapp_consent(whatsapp_id: str) -> bool:
+    subject = _whatsapp_consent_subject(whatsapp_id)
+    return bool(subject and has_patient_consented(subject))
+
+
+def _record_whatsapp_consent(whatsapp_id: str) -> None:
+    subject = _whatsapp_consent_subject(whatsapp_id)
+    if subject:
+        record_patient_consent(subject, channel="whatsapp")
+
+
+def _whatsapp_consent_prompt() -> str:
+    return (
+        f"{CONSENT_SUMMARY}\n\n"
+        "Please choose one option to continue on WhatsApp."
+    )
+
+
+def _is_consent_prompt(message: str) -> bool:
+    return CONSENT_SUMMARY in (message or "")
+
+
+def _next_action_from_message(normalized: str) -> str:
+    if normalized in {"1", "register"}:
+        return "register"
+    if normalized in {"2", "consult", "consultation", "start consultation"}:
+        return "consult"
+    return "menu"
+
+
+def _save_consent_session(whatsapp_id: str, name: str, next_action: str = "menu") -> None:
+    _save_session(whatsapp_id, "awaiting_consent", {"next_action": next_action}, name)
 
 
 def _frontend_base_url() -> str:
@@ -279,6 +322,37 @@ def _normalize_feedback_reply(message_text: str) -> str:
     return normalized
 
 
+def _normalize_interactive_reply(message_text: str) -> str:
+    normalized = (message_text or "").strip().lower()
+    if normalized.startswith("consent:"):
+        return normalized
+    return normalized
+
+
+async def _handle_whatsapp_consent(session: dict, message_text: str, name: str = "") -> str:
+    whatsapp_id = session["whatsapp_id"]
+    normalized = _normalize_interactive_reply(message_text)
+    if normalized == "consent:view":
+        return f"{CONSENT_POLICY_TEXT}\n\n{_whatsapp_consent_prompt()}"
+    if normalized in {"consent:disagree", "disagree", "no"}:
+        _clear_session(whatsapp_id)
+        return (
+            "You have declined the SynMed Telehealth consent policy.\n"
+            "We cannot continue registration or consultation on WhatsApp without consent."
+        )
+    if normalized not in {"consent:agree", "agree", "i agree", "yes"}:
+        return _wrong_step_reply("Please tap I Agree to continue, View Policy to read the policy, or I Disagree to stop.")
+
+    _record_whatsapp_consent(whatsapp_id)
+    next_action = (session.get("payload") or {}).get("next_action") or "menu"
+    _clear_session(whatsapp_id)
+    if next_action == "register":
+        return _start_registration_reply(whatsapp_id, name or session.get("name", ""))
+    if next_action == "consult":
+        return await _start_consultation_reply(whatsapp_id, name or session.get("name", ""))
+    return "Thank you. Your consent has been recorded.\n\n" + build_basic_menu(name or session.get("name", ""))
+
+
 async def send_whatsapp_rating_prompt(whatsapp_id: str, consultation: dict, patient_details: dict | None = None) -> bool:
     if not whatsapp_id:
         return False
@@ -436,9 +510,36 @@ def _lookup_patient_from_message(message_text: str, whatsapp_id: str) -> dict | 
     tokens = re.findall(r"SM\d+|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\+?\d[\d\s()-]{6,}", message_text or "", flags=re.I)
     for token in tokens:
         patient = get_patient_by_identifier(token.strip())
-        if patient:
+        if patient and _patient_matches_whatsapp_sender(patient, whatsapp_id):
             return patient
     return _lookup_patient_from_phone(whatsapp_id)
+
+
+def _patient_matches_whatsapp_sender(patient: dict | None, whatsapp_id: str) -> bool:
+    if not patient:
+        return False
+    sender_digits = _digits(whatsapp_id)
+    patient_digits = _digits(patient.get("phone") or "")
+    if not sender_digits or not patient_digits:
+        return False
+    sender_candidates = {sender_digits}
+    if sender_digits.startswith("234") and len(sender_digits) > 3:
+        sender_candidates.add("0" + sender_digits[3:])
+    if sender_digits.startswith("0") and len(sender_digits) == 11:
+        sender_candidates.add("234" + sender_digits[1:])
+    patient_candidates = {patient_digits}
+    if patient_digits.startswith("234") and len(patient_digits) > 3:
+        patient_candidates.add("0" + patient_digits[3:])
+    if patient_digits.startswith("0") and len(patient_digits) == 11:
+        patient_candidates.add("234" + patient_digits[1:])
+    return bool(sender_candidates & patient_candidates)
+
+
+def _privacy_guard_reply() -> str:
+    return (
+        "For privacy, I cannot show that patient record from this WhatsApp number.\n\n"
+        "Please use the WhatsApp number on the patient account, sign in on the web, or contact customer care for verification."
+    )
 
 
 def _whatsapp_recipient_from_patient(patient: dict | None) -> str:
@@ -947,10 +1048,16 @@ async def send_patient_document_notice(
 
 def build_keyword_reply(message_text: str, name: str = "", sender: str = "") -> str:
     normalized = (message_text or "").strip().lower()
+    contains_patient_identifier = bool(
+        re.search(r"\bSM\d+\b|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", message_text or "", flags=re.I)
+    )
     if normalized in {"hi", "hello", "hey", "menu", "start"}:
         return build_basic_menu(name)
     if normalized.startswith("setup") or normalized in {"web access", "activate web", "setup link"}:
-        return _web_setup_reply(_lookup_patient_from_message(message_text, sender))
+        patient = _lookup_patient_from_message(message_text, sender)
+        if not patient and contains_patient_identifier:
+            return _privacy_guard_reply()
+        return _web_setup_reply(patient)
     if normalized in {"6", "web", "website", "continue on web", "open web", "synmed website"}:
         return _continue_on_web_reply(_lookup_patient_from_phone(sender))
     if normalized in {"7", "guide", "how", "how to", "whatsapp guide", "consultation guide", "help"}:
@@ -959,6 +1066,8 @@ def build_keyword_reply(message_text: str, name: str = "", sender: str = "") -> 
         patient = _lookup_patient_from_message(message_text, sender)
         if patient:
             return _patient_record_reply(patient)
+        if contains_patient_identifier:
+            return _privacy_guard_reply()
         return (
             "I could not find that patient record. Please send your hospital number, phone number, or email, "
             "or reply 5 to talk to customer care."
@@ -998,7 +1107,7 @@ def build_keyword_reply(message_text: str, name: str = "", sender: str = "") -> 
 
 
 async def build_whatsapp_reply(message_text: str, name: str = "", sender: str = "") -> str:
-    normalized = (message_text or "").strip().lower()
+    normalized = _normalize_interactive_reply(message_text)
     session = _session(sender)
 
     if normalized == "cancel":
@@ -1007,6 +1116,13 @@ async def build_whatsapp_reply(message_text: str, name: str = "", sender: str = 
     patient, active_consultation = _active_consultation_for_whatsapp(sender)
     if session and session["state"] in {"awaiting_rating", "awaiting_review"}:
         return await _handle_whatsapp_feedback(session, message_text)
+    if session and session["state"] == "awaiting_consent":
+        return await _handle_whatsapp_consent(session, message_text, name)
+
+    if not active_consultation and not _has_whatsapp_consent(sender):
+        next_action = _next_action_from_message(normalized)
+        _save_consent_session(sender, name, next_action)
+        return _whatsapp_consent_prompt()
 
     if session and not active_consultation and normalized in RESTART_WORDS:
         _clear_session(sender)
@@ -1167,7 +1283,49 @@ async def send_menu_options_message(to: str, message: str) -> dict:
     return response.json()
 
 
+async def send_consent_options_message(to: str, message: str) -> dict:
+    token = _access_token()
+    phone_number_id = _phone_number_id()
+    if not token or not phone_number_id:
+        raise WhatsAppConfigurationError("WhatsApp access token or phone number ID is not configured.")
+
+    url = f"https://graph.facebook.com/{WHATSAPP_API_VERSION}/{phone_number_id}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to,
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {"text": message},
+            "action": {
+                "buttons": [
+                    {"type": "reply", "reply": {"id": "consent:agree", "title": "I Agree"}},
+                    {"type": "reply", "reply": {"id": "consent:view", "title": "View Policy"}},
+                    {"type": "reply", "reply": {"id": "consent:disagree", "title": "I Disagree"}},
+                ],
+            },
+        },
+    }
+    async with httpx.AsyncClient(timeout=20) as client:
+        response = await client.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+    response.raise_for_status()
+    return response.json()
+
+
 async def send_whatsapp_response(to: str, message: str) -> dict:
+    if _is_consent_prompt(message):
+        try:
+            return await send_consent_options_message(to, message)
+        except httpx.HTTPError:
+            return await send_text_message(to, message)
     if _is_basic_menu_reply(message):
         try:
             return await send_menu_options_message(to, message)

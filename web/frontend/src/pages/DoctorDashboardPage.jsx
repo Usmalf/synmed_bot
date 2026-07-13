@@ -2703,7 +2703,7 @@ export default function DoctorDashboardPage() {
                   >
                     <span className="call-control-button__content">
                       <PhoneIcon />
-                      Voice Call
+                      <span className="call-control-button__label">Voice Call</span>
                     </span>
                   </button>
                   <button
@@ -2714,7 +2714,7 @@ export default function DoctorDashboardPage() {
                   >
                     <span className="call-control-button__content">
                       <VideoIcon />
-                      Video Call
+                      <span className="call-control-button__label">Video Call</span>
                     </span>
                   </button>
                   <button
