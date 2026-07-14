@@ -3,6 +3,7 @@ from fastapi.responses import FileResponse
 from services.paystack import PaystackError
 from services.backups import create_database_backup, create_full_backup_archive, get_backup_status
 from services.operational_errors import get_operational_error_summary, list_operational_errors
+from services.coupons import CouponError, create_coupon, list_coupon_redemptions, list_coupons, update_coupon_status
 from pydantic import BaseModel
 
 from ..deps import require_admin
@@ -158,6 +159,22 @@ class AdminPaymentSettingsPayload(BaseModel):
     followup_label: str
     medical_report_fee: int
     medical_report_label: str
+
+
+class AdminCouponPayload(BaseModel):
+    code: str
+    description: str = ""
+    applies_to: str = "both"
+    discount_type: str = "percent"
+    discount_value: int = 0
+    max_uses: int | None = None
+    per_user_limit: int = 1
+    expires_at: str = ""
+    active: bool = True
+
+
+class AdminCouponStatusPayload(BaseModel):
+    active: bool
 
 
 class AdminEmailBrandingPayload(BaseModel):
@@ -396,6 +413,50 @@ def admin_clear_payment_attention(session: dict = Depends(require_admin)):
     result = clear_attention_payments(actor_role="admin", actor_id=session["user_id"])
     record_admin_audit(session["user_id"], "payment_attention_cleared", "payment", "attention")
     return result
+
+
+@router.get("/coupons")
+def admin_coupons(session: dict = Depends(require_admin)):
+    return {
+        "coupons": list_coupons(250),
+        "redemptions": list_coupon_redemptions(limit=250),
+    }
+
+
+@router.post("/coupons")
+def admin_create_coupon(payload: AdminCouponPayload, session: dict = Depends(require_admin)):
+    try:
+        coupon = create_coupon(payload.model_dump(), admin_id=session["user_id"])
+    except CouponError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    record_admin_audit(
+        session["user_id"],
+        "coupon_created",
+        "coupon",
+        coupon["code"],
+        {
+            "applies_to": coupon["applies_to"],
+            "discount_type": coupon["discount_type"],
+            "discount_value": coupon["discount_value"],
+        },
+    )
+    return {"created": True, "coupon": coupon}
+
+
+@router.patch("/coupons/{code}")
+def admin_update_coupon_status(code: str, payload: AdminCouponStatusPayload, session: dict = Depends(require_admin)):
+    try:
+        coupon = update_coupon_status(code, payload.active)
+    except CouponError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    record_admin_audit(
+        session["user_id"],
+        "coupon_status_updated",
+        "coupon",
+        coupon["code"],
+        {"active": coupon["active"]},
+    )
+    return {"updated": True, "coupon": coupon}
 
 
 @router.get("/doctor-earnings")

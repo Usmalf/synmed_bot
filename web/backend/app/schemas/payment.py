@@ -17,6 +17,7 @@ class PaymentInitializeRequest(BaseModel):
     patient_id: str | None = None
     registration_payload: dict | None = None
     callback_path: str | None = None
+    coupon_code: str | None = None
 
 
 class PaymentInitializeResponse(BaseModel):
@@ -28,6 +29,7 @@ class PaymentInitializeResponse(BaseModel):
     amount: int | None = None
     currency: str | None = None
     label: str | None = None
+    coupon: dict | None = None
 
 
 class PaymentVerifyResponse(BaseModel):
@@ -40,6 +42,7 @@ class PaymentVerifyResponse(BaseModel):
     patient: dict | None = None
     requires_email_verification: bool = False
     verification_delivery: str | None = None
+    coupon: dict | None = None
 
 
 class CurrentPaymentStatusResponse(BaseModel):

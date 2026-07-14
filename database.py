@@ -20,6 +20,8 @@ AUTO_ID_COLUMNS = {
     "customer_care_accounts": "account_id",
     "doctor_earnings": "id",
     "consultation_transfer_requests": "id",
+    "coupon_redemptions": "id",
+    "coupons": "id",
     "doctor_ratings": "id",
     "doctor_reviews": "id",
     "doctors": "id",
@@ -380,8 +382,45 @@ def init_db():
             "access_expires_at": "TEXT",
             "grant_reason": "TEXT",
             "granted_by_admin_id": "INTEGER",
+            "original_amount": "INTEGER",
+            "discount_amount": "INTEGER NOT NULL DEFAULT 0",
+            "coupon_code": "TEXT",
         },
     )
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS coupons (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code TEXT NOT NULL UNIQUE,
+        description TEXT,
+        applies_to TEXT NOT NULL DEFAULT 'both',
+        discount_type TEXT NOT NULL DEFAULT 'percent',
+        discount_value INTEGER NOT NULL DEFAULT 0,
+        max_uses INTEGER,
+        per_user_limit INTEGER NOT NULL DEFAULT 1,
+        expires_at TEXT,
+        active INTEGER NOT NULL DEFAULT 1,
+        created_by_admin_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS coupon_redemptions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        coupon_code TEXT NOT NULL,
+        reference TEXT NOT NULL UNIQUE,
+        patient_id TEXT,
+        email TEXT,
+        phone TEXT,
+        purpose TEXT NOT NULL,
+        amount_before INTEGER NOT NULL,
+        discount_amount INTEGER NOT NULL,
+        amount_after INTEGER NOT NULL,
+        redeemed_at TEXT NOT NULL
+    )
+    """)
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS dismissed_payment_attention (

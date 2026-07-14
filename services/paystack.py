@@ -104,6 +104,9 @@ def create_payment_record(
     patient_type: str,
     label: str,
     registration_payload_json: str | None = None,
+    original_amount: int | None = None,
+    discount_amount: int = 0,
+    coupon_code: str | None = None,
 ):
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -111,9 +114,10 @@ def create_payment_record(
             """
             INSERT INTO payments (
                 reference, telegram_id, patient_id, email, amount, currency,
-                patient_type, label, status, created_at, registration_payload_json
+                patient_type, label, status, created_at, registration_payload_json,
+                original_amount, discount_amount, coupon_code
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 reference,
@@ -127,6 +131,9 @@ def create_payment_record(
                 "initialized",
                 _now_iso(),
                 registration_payload_json,
+                original_amount,
+                discount_amount,
+                coupon_code,
             ),
         )
         conn.commit()
@@ -359,7 +366,8 @@ def get_payment_by_reference(reference: str):
                    patient_type, label, authorization_url, access_code,
                    status, paystack_status, created_at, verified_at,
                    payment_token, payment_token_used_at, registration_payload_json,
-                   access_expires_at, grant_reason, granted_by_admin_id
+                   access_expires_at, grant_reason, granted_by_admin_id,
+                   original_amount, discount_amount, coupon_code
             FROM payments
             WHERE reference = ?
             """,
@@ -377,7 +385,8 @@ def get_payment_by_token(payment_token: str):
                    patient_type, label, authorization_url, access_code,
                    status, paystack_status, created_at, verified_at,
                    payment_token, payment_token_used_at, registration_payload_json,
-                   access_expires_at, grant_reason, granted_by_admin_id
+                   access_expires_at, grant_reason, granted_by_admin_id,
+                   original_amount, discount_amount, coupon_code
             FROM payments
             WHERE UPPER(payment_token) = UPPER(?)
             """,
@@ -414,7 +423,8 @@ def get_latest_valid_payment_for_patient(patient_id: str):
                    patient_type, label, authorization_url, access_code,
                    status, paystack_status, created_at, verified_at,
                    payment_token, payment_token_used_at, registration_payload_json,
-                   access_expires_at, grant_reason, granted_by_admin_id
+                   access_expires_at, grant_reason, granted_by_admin_id,
+                   original_amount, discount_amount, coupon_code
             FROM payments
             WHERE UPPER(COALESCE(patient_id, '')) = ?
               AND status = 'verified'
@@ -559,6 +569,9 @@ async def initialize_transaction(
         patient_type=(metadata or {}).get("patient_type", "unknown"),
         label=label,
         registration_payload_json=(metadata or {}).get("registration_payload_json"),
+        original_amount=(metadata or {}).get("original_amount"),
+        discount_amount=int((metadata or {}).get("discount_amount", 0) or 0),
+        coupon_code=(metadata or {}).get("coupon_code"),
     )
     update_payment_initialization(
         reference,

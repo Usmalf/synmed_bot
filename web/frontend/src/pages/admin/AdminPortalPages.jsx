@@ -6,6 +6,7 @@ import {
   assignAdminMedicalReportRequest,
   clearAdminPaymentAttention,
   createAdminDoctorManual,
+  createAdminCoupon,
   createAdminPartner,
   createAdminHealthTip,
   createAdminPatientManual,
@@ -17,6 +18,7 @@ import {
   fetchAdminAuditLogs,
   fetchAdminBackupStatus,
   fetchAdminConsultation,
+  fetchAdminCoupons,
   fetchAdminDeploymentReadiness,
   fetchAdminConsultations,
   fetchAdminDeliverySettings,
@@ -47,6 +49,7 @@ import {
   suspendDoctorAccount,
   testAdminDelivery,
   updateAdminEmailBranding,
+  updateAdminCouponStatus,
   updateAdminDoctorPayoutPreference,
   updateAdminHealthTip,
   updateAdminPaymentSettings,
@@ -2073,21 +2076,34 @@ export function AdminSettingsPage() {
     support_address: "",
     footer_text: "",
   });
+  const [couponForm, setCouponForm] = useState({
+    code: "",
+    description: "",
+    applies_to: "both",
+    discount_type: "free",
+    discount_value: 100,
+    max_uses: "",
+    per_user_limit: 1,
+    expires_at: "",
+    active: true,
+  });
   const [dialog, setDialog] = useState(null);
   const [busy, setBusy] = useState(false);
 
   async function load() {
     setState((current) => ({ ...current, status: "loading", message: "Checking delivery settings..." }));
     try {
-      const [settings, backupStatus, reminderStatus, deploymentStatus] = await Promise.all([
+      const [settings, backupStatus, reminderStatus, deploymentStatus, couponStatus] = await Promise.all([
         fetchAdminDeliverySettings(),
         fetchAdminBackupStatus(),
         fetchAdminEmailReminders(),
         fetchAdminDeploymentReadiness(),
+        fetchAdminCoupons(),
       ]);
       settings.backups = backupStatus;
       settings.reminders = reminderStatus.reminders || [];
       settings.deployment = deploymentStatus;
+      settings.coupons = couponStatus;
       setState({ status: "success", message: "", settings });
       if (settings.payments) {
         setPaymentForm({
@@ -2222,8 +2238,68 @@ export function AdminSettingsPage() {
     }
   }
 
+  async function saveCoupon(event) {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      const result = await createAdminCoupon({
+        ...couponForm,
+        discount_value: Number(couponForm.discount_type === "free" ? 100 : couponForm.discount_value),
+        max_uses: couponForm.max_uses === "" ? null : Number(couponForm.max_uses),
+        per_user_limit: Number(couponForm.per_user_limit || 1),
+      });
+      const couponStatus = await fetchAdminCoupons();
+      setCouponForm({
+        code: "",
+        description: "",
+        applies_to: "both",
+        discount_type: "free",
+        discount_value: 100,
+        max_uses: "",
+        per_user_limit: 1,
+        expires_at: "",
+        active: true,
+      });
+      setState((current) => ({
+        ...current,
+        status: "success",
+        message: `${result.coupon?.code || "Coupon"} created.`,
+        settings: {
+          ...(current.settings || {}),
+          coupons: couponStatus,
+        },
+      }));
+    } catch (error) {
+      setState((current) => ({ ...current, status: "error", message: error.message || "Unable to create coupon." }));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleCoupon(coupon) {
+    setBusy(true);
+    try {
+      await updateAdminCouponStatus(coupon.code, !coupon.active);
+      const couponStatus = await fetchAdminCoupons();
+      setState((current) => ({
+        ...current,
+        status: "success",
+        message: `${coupon.code} ${coupon.active ? "deactivated" : "activated"}.`,
+        settings: {
+          ...(current.settings || {}),
+          coupons: couponStatus,
+        },
+      }));
+    } catch (error) {
+      setState((current) => ({ ...current, status: "error", message: error.message || "Unable to update coupon." }));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const settingsPanels = [
     { id: "payments", label: "Payment values" },
+    { id: "coupons", label: "Coupons" },
     { id: "readiness", label: "System readiness" },
     { id: "backups", label: "Backups" },
     { id: "deployment", label: "Deployment" },
@@ -2262,6 +2338,62 @@ export function AdminSettingsPage() {
             <label><span>Medical report payment label</span><input required value={paymentForm.medical_report_label} onChange={(event) => setPaymentForm((current) => ({ ...current, medical_report_label: event.target.value }))} /></label>
             <button className="button button--primary" type="submit" disabled={busy}>{busy ? "Saving..." : "Save payment settings"}</button>
           </form>
+        </DataPanel>
+        ) : null}
+        {activeSettingsPanel === "coupons" ? (
+        <DataPanel title="Coupons">
+          <form className="admin-form admin-settings-payment-form" onSubmit={saveCoupon}>
+            <label><span>Coupon code</span><input required value={couponForm.code} onChange={(event) => setCouponForm((current) => ({ ...current, code: event.target.value.toUpperCase() }))} placeholder="SYNMEDFREE100" /></label>
+            <label><span>Description</span><input value={couponForm.description} onChange={(event) => setCouponForm((current) => ({ ...current, description: event.target.value }))} placeholder="Free launch consultation" /></label>
+            <label><span>Applies to</span><select value={couponForm.applies_to} onChange={(event) => setCouponForm((current) => ({ ...current, applies_to: event.target.value }))}><option value="both">Registration and consultation</option><option value="registration">Registration only</option><option value="consultation">Consultation only</option></select></label>
+            <label><span>Discount type</span><select value={couponForm.discount_type} onChange={(event) => setCouponForm((current) => ({ ...current, discount_type: event.target.value, discount_value: event.target.value === "free" ? 100 : current.discount_value }))}><option value="free">Free</option><option value="percent">Percentage</option><option value="fixed">Fixed NGN amount</option></select></label>
+            {couponForm.discount_type !== "free" ? (
+              <label><span>{couponForm.discount_type === "percent" ? "Percent off" : "Amount off"}</span><input required min="1" max={couponForm.discount_type === "percent" ? "100" : undefined} type="number" value={couponForm.discount_value} onChange={(event) => setCouponForm((current) => ({ ...current, discount_value: event.target.value }))} /></label>
+            ) : null}
+            <label><span>Total use limit</span><input min="1" type="number" value={couponForm.max_uses} onChange={(event) => setCouponForm((current) => ({ ...current, max_uses: event.target.value }))} placeholder="Unlimited" /></label>
+            <label><span>Uses per patient/email</span><input required min="1" type="number" value={couponForm.per_user_limit} onChange={(event) => setCouponForm((current) => ({ ...current, per_user_limit: event.target.value }))} /></label>
+            <label><span>Expires at</span><input type="datetime-local" value={couponForm.expires_at} onChange={(event) => setCouponForm((current) => ({ ...current, expires_at: event.target.value }))} /></label>
+            <button className="button button--primary" type="submit" disabled={busy}>{busy ? "Saving..." : "Create coupon"}</button>
+          </form>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead><tr><th>Code</th><th>Use</th><th>Discount</th><th>Limit</th><th>Status</th><th>Action</th></tr></thead>
+              <tbody>
+                {(state.settings?.coupons?.coupons || []).map((coupon) => (
+                  <tr key={coupon.code}>
+                    <td><strong>{coupon.code}</strong><br /><span>{coupon.description || "No description"}</span></td>
+                    <td>{formatAction(coupon.applies_to)}</td>
+                    <td>{coupon.discount_type === "free" ? "Free" : coupon.discount_type === "percent" ? `${coupon.discount_value}%` : `${state.settings?.payments?.currency || "NGN"} ${Number(coupon.discount_value || 0).toLocaleString()}`}</td>
+                    <td>{coupon.used_count || 0}{coupon.max_uses ? ` / ${coupon.max_uses}` : ""}</td>
+                    <td><StatusPill label={coupon.active ? "Active" : "Inactive"} tone={coupon.active ? "success" : "neutral"} /></td>
+                    <td><button type="button" disabled={busy} onClick={() => toggleCoupon(coupon)}>{coupon.active ? "Deactivate" : "Activate"}</button></td>
+                  </tr>
+                ))}
+                {!state.settings?.coupons?.coupons?.length ? (
+                  <tr><td colSpan="6">No coupons created yet.</td></tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead><tr><th>Recent use</th><th>Patient</th><th>Purpose</th><th>Savings</th><th>Date</th></tr></thead>
+              <tbody>
+                {(state.settings?.coupons?.redemptions || []).slice(0, 20).map((redemption) => (
+                  <tr key={redemption.reference}>
+                    <td><strong>{redemption.coupon_code}</strong><br /><span>{redemption.reference}</span></td>
+                    <td>{redemption.patient_id || redemption.email || "Unassigned"}</td>
+                    <td>{formatAction(redemption.purpose)}</td>
+                    <td>{state.settings?.payments?.currency || "NGN"} {Number(redemption.discount_amount || 0).toLocaleString()}</td>
+                    <td>{formatDate(redemption.redeemed_at)}</td>
+                  </tr>
+                ))}
+                {!state.settings?.coupons?.redemptions?.length ? (
+                  <tr><td colSpan="5">No coupon usage yet.</td></tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
         </DataPanel>
         ) : null}
         {activeSettingsPanel === "readiness" ? (

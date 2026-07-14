@@ -262,6 +262,37 @@ export async function clearAdminPaymentAttention() {
   return body;
 }
 
+export async function fetchAdminCoupons() {
+  const response = await fetch(`${API_BASE_URL}/admin/coupons`, {
+    headers: { ...authHeaders() },
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body?.detail || `Request failed: ${response.status}`);
+  return body;
+}
+
+export async function createAdminCoupon(payload) {
+  const response = await fetch(`${API_BASE_URL}/admin/coupons`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body?.detail || `Request failed: ${response.status}`);
+  return body;
+}
+
+export async function updateAdminCouponStatus(code, active) {
+  const response = await fetch(`${API_BASE_URL}/admin/coupons/${encodeURIComponent(code)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ active }),
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body?.detail || `Request failed: ${response.status}`);
+  return body;
+}
+
 export async function fetchAdminDoctorEarnings() {
   const response = await fetch(`${API_BASE_URL}/admin/doctor-earnings`, {
     headers: { ...authHeaders() },

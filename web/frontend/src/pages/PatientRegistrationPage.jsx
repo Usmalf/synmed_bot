@@ -24,6 +24,7 @@ export default function PatientRegistrationPage() {
     password: "",
   });
   const [termsAccepted, setTermsAccepted] = useState(false);
+  const [couponCode, setCouponCode] = useState("");
   const [registrationState, setRegistrationState] = useState({
     status: flow.registrationPatient ? "success" : "idle",
     message: "",
@@ -202,6 +203,7 @@ export default function PatientRegistrationPage() {
         email: registrationForm.email.trim(),
         patient_type: "new",
         callback_path: "/patient/register",
+        coupon_code: couponCode.trim(),
         registration_payload: {
           ...registrationForm,
           age: Number(registrationForm.age),
@@ -219,6 +221,27 @@ export default function PatientRegistrationPage() {
         window.setTimeout(() => {
           window.location.assign(result.authorization_url);
         }, 450);
+      } else if (result.reference) {
+        const verification = await verifyPayment(result.reference);
+        setPaymentState({
+          status: verification.verified ? "success" : "pending",
+          message: verification.message || result.message,
+          payment: verification,
+        });
+        setRegistrationState({
+          status: verification.verified ? "success" : "idle",
+          message: verification.message || "",
+          patient: verification.patient || null,
+        });
+        savePatientFlow({
+          registrationPatient: verification.patient || null,
+          newPayment: verification,
+        });
+        if (verification.verified) {
+          window.setTimeout(() => {
+            navigate("/signin", { replace: true });
+          }, 3000);
+        }
       }
     } catch (error) {
       setPaymentState({
@@ -275,6 +298,16 @@ export default function PatientRegistrationPage() {
                 <label className="form-field">
                   <span className="form-field__label">Prior Medical Conditions</span>
                   <input className="form-field__input" type="text" placeholder="Hypertension, diabetes, sickle cell, asthma..." value={registrationForm.medical_conditions} onChange={(event) => updateRegistrationField("medical_conditions", event.target.value)} />
+                </label>
+                <label className="form-field">
+                  <span className="form-field__label">Coupon Code</span>
+                  <input
+                    className="form-field__input"
+                    type="text"
+                    placeholder="Optional"
+                    value={couponCode}
+                    onChange={(event) => setCouponCode(event.target.value.toUpperCase())}
+                  />
                 </label>
                 <label className="login-page__checkbox">
                   <input

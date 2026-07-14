@@ -31,6 +31,7 @@ export default function PatientConsultationRequestPage() {
   const [consultationForm, setConsultationForm] = useState({
     reference: flow.consultationReference || "",
   });
+  const [couponCode, setCouponCode] = useState("");
 
   useEffect(() => {
     let ignore = false;
@@ -143,6 +144,7 @@ export default function PatientConsultationRequestPage() {
         patient_type: "returning",
         patient_id: patientState.patient.hospital_number,
         callback_path: "/patient/consultation",
+        coupon_code: couponCode.trim(),
       });
       setPaymentState({
         status: "success",
@@ -157,6 +159,29 @@ export default function PatientConsultationRequestPage() {
       if (result.authorization_url) {
         window.location.assign(result.authorization_url);
         return;
+      }
+      if (result.reference) {
+        const verification = await verifyPayment(result.reference);
+        if (verification.verified) {
+          const payment = {
+            reference: verification.reference,
+            verified_at: new Date().toISOString(),
+            amount: verification.amount,
+            currency: verification.currency,
+            label: paymentConfig?.returning_patient_label || "Consultation Fee",
+            patient_type: "returning",
+          };
+          setPaymentState({
+            status: "success",
+            message: verification.message,
+            payment,
+            initiation: null,
+          });
+          savePatientFlow({
+            consultationReference: verification.reference,
+          });
+          navigate(`/consultation?reference=${encodeURIComponent(verification.reference)}`, { replace: true });
+        }
       }
     } catch (error) {
       setPaymentState({
@@ -259,6 +284,19 @@ export default function PatientConsultationRequestPage() {
               <dd>{patientState.patient.email || "No email recorded"}</dd>
             </div>
           </dl>
+        ) : null}
+
+        {!hasValidPayment ? (
+          <label className="form-field patient-consultation-access__coupon">
+            <span className="form-field__label">Coupon Code</span>
+            <input
+              className="form-field__input"
+              type="text"
+              placeholder="Optional"
+              value={couponCode}
+              onChange={(event) => setCouponCode(event.target.value.toUpperCase())}
+            />
+          </label>
         ) : null}
 
         <div className={`lookup-result lookup-result--${paymentState.status}`}>

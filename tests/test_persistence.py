@@ -28,6 +28,7 @@ from services.consultation_records import (
     start_consultation_record,
 )
 from services.consent import record_patient_consent
+from services.coupons import create_coupon, list_coupon_redemptions
 from services.doctor_earnings import list_doctor_earnings, mark_doctor_earning_paid
 from services.consultation_transfers import create_transfer_request, respond_to_transfer_request
 from services.clinical_documents import create_investigation_document, create_prescription_document
@@ -62,7 +63,7 @@ from web.backend.app.services.auth_service import (
     send_patient_web_access_setup,
 )
 from web.backend.app.services.doctor_app_service import send_doctor_message
-from web.backend.app.services.payment_app_service import verify_web_payment
+from web.backend.app.services.payment_app_service import initialize_web_payment, verify_web_payment
 from web.backend.app.services.whatsapp_service import (
     build_basic_menu,
     build_keyword_reply,
@@ -425,6 +426,59 @@ class TestPersistenceStores(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn("https://wa.me/2348107840312", response.headers["location"])
         self.assertIn("paid%20wa-return-test", response.headers["location"])
+
+    def test_free_registration_coupon_completes_without_paystack(self):
+        create_coupon(
+            {
+                "code": "SYNMEDFREE100",
+                "applies_to": "registration",
+                "discount_type": "free",
+                "discount_value": 100,
+                "max_uses": 5,
+                "per_user_limit": 1,
+            },
+            admin_id="1",
+        )
+
+        with patch(
+            "web.backend.app.services.payment_app_service.send_patient_email_verification",
+            return_value={"delivered": True, "channel": "email"},
+        ):
+            initialized = asyncio.run(
+                initialize_web_payment(
+                    {
+                        "email": "coupon.patient@example.com",
+                        "patient_type": "new",
+                        "coupon_code": "synmedfree100",
+                        "callback_path": "/patient/register",
+                        "registration_payload": {
+                            "name": "Coupon Patient",
+                            "age": 28,
+                            "gender": "Female",
+                            "phone": "08030000000",
+                            "address": "Lagos",
+                            "allergy": "",
+                            "medical_conditions": "",
+                            "email": "coupon.patient@example.com",
+                            "password": "StrongPass123!",
+                        },
+                    }
+                )
+            )
+            verified = asyncio.run(verify_web_payment(initialized["reference"]))
+
+        payment = get_payment_by_reference(initialized["reference"])
+        patient = get_patient_by_identifier("coupon.patient@example.com")
+        redemptions = list_coupon_redemptions("SYNMEDFREE100")
+
+        self.assertTrue(initialized["initialized"])
+        self.assertIsNone(initialized["authorization_url"])
+        self.assertEqual(initialized["amount"], 0)
+        self.assertEqual(payment["paystack_status"], "coupon_free")
+        self.assertTrue(verified["verified"])
+        self.assertEqual(patient["name"], "Coupon Patient")
+        self.assertEqual(len(redemptions), 1)
+        self.assertEqual(redemptions[0]["discount_amount"], 3000)
 
     def test_whatsapp_wrong_registration_response_keeps_step_and_start_resets(self):
         self._record_whatsapp_consent()

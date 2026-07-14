@@ -6,6 +6,7 @@ from services.paystack import (
     PaystackError,
     build_backend_callback_url,
     build_frontend_callback_url,
+    create_payment_record,
     create_payment_reference,
     get_payment_by_reference,
     get_latest_valid_payment_for_patient,
@@ -15,6 +16,7 @@ from services.paystack import (
     mark_payment_verified,
     verify_transaction,
 )
+from services.coupons import CouponError, record_coupon_redemption, validate_coupon
 from services.patient_records import get_patient_by_identifier, register_patient, update_patient_record
 from .auth_service import hash_patient_password, send_patient_email_verification
 from .settings_service import get_payment_settings
@@ -93,6 +95,8 @@ async def initialize_web_payment(payload: dict) -> dict:
 
     patient_identifier = payload.get("patient_id") or ""
     patient = get_patient_by_identifier(patient_identifier) if patient_identifier else None
+    if patient_type != "new" and not patient:
+        raise PaystackError("Patient record could not be found for this payment.")
 
     reference = create_payment_reference()
     metadata = {
@@ -101,6 +105,8 @@ async def initialize_web_payment(payload: dict) -> dict:
         "source": "web_portal",
         "telegram_id": 0,
     }
+    payer_email = payload["email"].strip().lower()
+    payer_phone = patient.get("phone", "") if patient else ""
     if patient_type == "new":
         registration = payload.get("registration_payload") or {}
         required_fields = [
@@ -118,6 +124,8 @@ async def initialize_web_payment(payload: dict) -> dict:
         normalized_email = registration["email"].strip().lower()
         if get_patient_by_identifier(normalized_email):
             raise PaystackError("A patient account already exists with this email. Please sign in or recover your account.")
+        payer_email = normalized_email
+        payer_phone = registration["phone"].strip()
         metadata["registration_payload_json"] = json.dumps(
             {
                 "name": registration["name"].strip(),
@@ -131,6 +139,23 @@ async def initialize_web_payment(payload: dict) -> dict:
                 "password_hash": hash_patient_password(registration["password"]),
             }
         )
+    purpose = "registration" if patient_type == "new" else "consultation"
+    try:
+        coupon = validate_coupon(
+            code=payload.get("coupon_code") or "",
+            purpose=purpose,
+            amount=amount,
+            patient_id=patient_identifier,
+            email=payer_email,
+            phone=payer_phone,
+        )
+    except CouponError as exc:
+        raise PaystackError(str(exc)) from exc
+    if coupon["applied"]:
+        metadata["coupon_code"] = coupon["code"]
+        metadata["original_amount"] = coupon["amount_before"]
+        metadata["discount_amount"] = coupon["discount_amount"]
+        amount = coupon["amount_after"]
     callback_path = (payload.get("callback_path") or "").strip()
     if not callback_path:
         callback_path = "/patient/register" if patient_type == "new" else "/patient/consultation"
@@ -146,8 +171,41 @@ async def initialize_web_payment(payload: dict) -> dict:
         },
     )
 
+    if amount == 0 and coupon["applied"]:
+        create_payment_record(
+            reference=reference,
+            telegram_id=0,
+            patient_id=patient_identifier,
+            email=payer_email,
+            amount=0,
+            currency=payment_config["currency"],
+            patient_type=patient_type,
+            label=label,
+            registration_payload_json=metadata.get("registration_payload_json"),
+            original_amount=coupon["amount_before"],
+            discount_amount=coupon["discount_amount"],
+            coupon_code=coupon["code"],
+        )
+        mark_payment_verified(reference, paystack_status="coupon_free", patient_id=patient_identifier or None)
+        return {
+            "initialized": True,
+            "message": f"Coupon {coupon['code']} applied. No payment is required.",
+            "reference": reference,
+            "authorization_url": None,
+            "access_code": None,
+            "amount": 0,
+            "currency": payment_config["currency"],
+            "label": label,
+            "coupon": {
+                "code": coupon["code"],
+                "discount_amount": coupon["discount_amount"],
+                "original_amount": coupon["amount_before"],
+                "amount_after": 0,
+            },
+        }
+
     result = await initialize_transaction(
-        email=payload["email"],
+        email=payer_email,
         amount_ngn=amount,
         currency=payment_config["currency"],
         reference=reference,
@@ -165,6 +223,16 @@ async def initialize_web_payment(payload: dict) -> dict:
         "amount": amount,
         "currency": payment_config["currency"],
         "label": label,
+        "coupon": (
+            {
+                "code": coupon["code"],
+                "discount_amount": coupon["discount_amount"],
+                "original_amount": coupon["amount_before"],
+                "amount_after": coupon["amount_after"],
+            }
+            if coupon["applied"]
+            else None
+        ),
     }
 
 
@@ -192,12 +260,17 @@ async def verify_web_payment(reference: str) -> dict:
             "patient": None,
         }
 
-    verification = await verify_transaction(reference)
-    paystack_status = (verification.get("status") or "").lower()
-    amount_ngn = int(verification.get("amount", 0)) // 100
-    currency = verification.get("currency")
+    if payment["status"] == "verified" and payment["paystack_status"] == "coupon_free":
+        paystack_status = "coupon_free"
+        amount_ngn = int(payment["amount"] or 0)
+        currency = payment["currency"]
+    else:
+        verification = await verify_transaction(reference)
+        paystack_status = (verification.get("status") or "").lower()
+        amount_ngn = int(verification.get("amount", 0)) // 100
+        currency = verification.get("currency")
 
-    if paystack_status != "success":
+    if paystack_status not in {"success", "coupon_free"}:
         mark_payment_status(
             reference,
             status="pending_verification",
@@ -287,6 +360,18 @@ async def verify_web_payment(reference: str) -> dict:
         paystack_status=paystack_status,
         patient_id=payment_patient_id or None,
     )
+    if payment["coupon_code"]:
+        record_coupon_redemption(
+            reference=reference,
+            code=payment["coupon_code"],
+            purpose="registration" if payment["patient_type"] == "new" else "consultation",
+            amount_before=int(payment["original_amount"] or payment["amount"] or 0),
+            discount_amount=int(payment["discount_amount"] or 0),
+            amount_after=int(payment["amount"] or 0),
+            patient_id=payment_patient_id or "",
+            email=payment["email"] or "",
+            phone=(patient.get("phone") if patient else "") or "",
+        )
     try:
         await notify_whatsapp_payment_verified(reference, patient)
     except Exception:
@@ -326,4 +411,14 @@ async def verify_web_payment(reference: str) -> dict:
         ),
         "requires_email_verification": requires_email_verification,
         "verification_delivery": verification_delivery,
+        "coupon": (
+            {
+                "code": payment["coupon_code"],
+                "discount_amount": payment["discount_amount"] or 0,
+                "original_amount": payment["original_amount"] or payment["amount"],
+                "amount_after": payment["amount"],
+            }
+            if payment["coupon_code"]
+            else None
+        ),
     }
