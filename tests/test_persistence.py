@@ -7,7 +7,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlparse
 from unittest.mock import AsyncMock, patch
 
@@ -67,11 +67,12 @@ from web.backend.app.services.whatsapp_service import (
     build_basic_menu,
     build_keyword_reply,
     build_whatsapp_reply,
+    handle_whatsapp_media_message,
     send_patient_document_notice,
     send_whatsapp_response,
 )
 from web.backend.app.routes.payments import whatsapp_payment_return
-from web.backend.app.routes.whatsapp import _extract_text_messages
+from web.backend.app.routes.whatsapp import _extract_media_messages, _extract_text_messages
 
 
 class TestPersistenceStores(unittest.TestCase):
@@ -596,6 +597,86 @@ class TestPersistenceStores(unittest.TestCase):
             rating = cursor.fetchone()
         self.assertEqual(rating["rating"], 5)
 
+    def test_whatsapp_rating_can_be_skipped_with_no(self):
+        patient = register_patient(
+            telegram_id=None,
+            name="WhatsApp No Rating Patient",
+            age="42",
+            gender="Female",
+            phone="08107840312",
+            email="whatsapp.no.rating@example.com",
+            address="Lagos",
+            allergy="",
+        )
+        doctor_id = 90004
+        doctor_registry.set_doctor_busy(doctor_id, channel="web")
+        start_chat(
+            patient["id"],
+            doctor_id,
+            {
+                "reference": "wa-no-rating-ref",
+                "hospital_number": patient["hospital_number"],
+                "name": patient["name"],
+                "age": str(patient["age"]),
+                "gender": patient["gender"],
+                "phone": patient["phone"],
+                "address": patient["address"],
+                "allergy": patient["allergy"],
+                "history": "Body pain",
+                "source": "web",
+                "channel": "whatsapp",
+                "whatsapp_id": "2348107840312",
+            },
+        )
+
+        asyncio.run(build_whatsapp_reply("end chat", name="WhatsApp No Rating Patient", sender="2348107840312"))
+        skip_reply = asyncio.run(build_whatsapp_reply("no", name="WhatsApp No Rating Patient", sender="2348107840312"))
+
+        self.assertIn("No problem", skip_reply)
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT state FROM whatsapp_sessions WHERE whatsapp_id = ?", ("2348107840312",))
+            session = cursor.fetchone()
+        self.assertIsNone(session)
+
+    def test_whatsapp_rating_session_expires(self):
+        expired_at = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+        timestamp = datetime.now(timezone.utc).isoformat()
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO whatsapp_sessions (whatsapp_id, name, state, payload_json, updated_at, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "2348107840312",
+                    "Expired Rating Patient",
+                    "awaiting_rating",
+                    json.dumps(
+                        {
+                            "consultation_id": "CONS-WA-EXPIRED",
+                            "doctor_id": 90005,
+                            "patient_runtime_id": 44,
+                            "patient_id": "SM0001",
+                            "expires_at": expired_at,
+                        }
+                    ),
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            conn.commit()
+
+        reply = asyncio.run(build_whatsapp_reply("5", name="Expired Rating Patient", sender="2348107840312"))
+
+        self.assertIn("feedback request has expired", reply)
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT state FROM whatsapp_sessions WHERE whatsapp_id = ?", ("2348107840312",))
+            session = cursor.fetchone()
+        self.assertIsNone(session)
+
     def test_whatsapp_stale_queue_session_is_cleared_after_consultation_ends(self):
         self._record_whatsapp_consent()
         patient = register_patient(
@@ -669,6 +750,112 @@ class TestPersistenceStores(unittest.TestCase):
         self.assertEqual(messages[0]["from"], "2348107840312")
         self.assertEqual(messages[0]["text"], "rating:5")
         self.assertEqual(messages[0]["name"], "WhatsApp User")
+
+    def test_whatsapp_webhook_extracts_media_message(self):
+        payload = {
+            "entry": [
+                {
+                    "changes": [
+                        {
+                            "value": {
+                                "messages": [
+                                    {
+                                        "from": "2348107840312",
+                                        "id": "wamid.media",
+                                        "type": "document",
+                                        "document": {
+                                            "id": "media-123",
+                                            "filename": "result.pdf",
+                                            "mime_type": "application/pdf",
+                                            "caption": "My result",
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+
+        messages = _extract_media_messages(payload)
+
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0]["from"], "2348107840312")
+        self.assertEqual(messages[0]["media_id"], "media-123")
+        self.assertEqual(messages[0]["media_type"], "document")
+        self.assertEqual(messages[0]["filename"], "result.pdf")
+
+    def test_whatsapp_media_message_is_saved_to_active_consultation(self):
+        patient = register_patient(
+            telegram_id=None,
+            name="WhatsApp Media Patient",
+            age="36",
+            gender="Female",
+            phone="08107840312",
+            email="whatsapp.media@example.com",
+            address="Lagos",
+            allergy="",
+        )
+        doctor_id = 90006
+        consultation_id = start_chat(
+            patient["id"],
+            doctor_id,
+            {
+                "reference": "wa-media-ref",
+                "hospital_number": patient["hospital_number"],
+                "name": patient["name"],
+                "age": str(patient["age"]),
+                "gender": patient["gender"],
+                "phone": patient["phone"],
+                "address": patient["address"],
+                "allergy": patient["allergy"],
+                "history": "Body pain",
+                "source": "web",
+                "channel": "whatsapp",
+                "whatsapp_id": "2348107840312",
+            },
+        )
+        original_storage_root = storage_service.STORAGE_ROOT
+        with tempfile.TemporaryDirectory() as storage_dir:
+            storage_service.STORAGE_ROOT = Path(storage_dir)
+            try:
+                with patch(
+                    "web.backend.app.services.whatsapp_service._download_whatsapp_media",
+                    new_callable=AsyncMock,
+                    return_value=(b"voice-bytes", "audio/ogg"),
+                ):
+                    reply = asyncio.run(
+                        handle_whatsapp_media_message(
+                            {
+                                "from": "2348107840312",
+                                "media_id": "media-voice",
+                                "media_type": "audio",
+                                "filename": "",
+                            }
+                        )
+                    )
+            finally:
+                storage_service.STORAGE_ROOT = original_storage_root
+
+        self.assertEqual(reply, "")
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT message_text, asset_path, asset_type
+                FROM consultation_messages
+                WHERE consultation_id = ? AND sender_role = 'patient_whatsapp'
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (consultation_id,),
+            )
+            message = cursor.fetchone()
+
+        self.assertEqual(message["message_text"], "Voice message")
+        self.assertTrue(message["asset_path"].startswith("consultation_media/chat_uploads/whatsapp-"))
+        self.assertEqual(message["asset_type"], "audio/ogg")
 
     def test_paystack_webhook_records_event_and_updates_payment_once(self):
         reference = "synmed-test-webhook"

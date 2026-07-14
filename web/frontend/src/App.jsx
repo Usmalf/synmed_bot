@@ -145,6 +145,7 @@ function getSeoForPath(pathname) {
 }
 const SESSION_LAST_ACTIVITY_KEY = "synmed_session_last_activity_at";
 const LOGOUT_HOME_REDIRECT_KEY = "synmed_logout_redirect_home";
+const PENDING_FEEDBACK_KEY = "synmed_pending_consultation_feedback";
 const ACTIVITY_EVENTS = ["mousemove", "mousedown", "keydown", "scroll", "touchstart", "input"];
 
 function AppNav() {
@@ -212,6 +213,8 @@ function AppNav() {
     clearPendingPatientLoginIdentifier();
     clearPendingPatientRecoveryIdentifier();
     window.localStorage.removeItem(SESSION_LAST_ACTIVITY_KEY);
+    window.localStorage.removeItem(PENDING_FEEDBACK_KEY);
+    window.dispatchEvent(new CustomEvent("synmed:feedback-expired"));
     window.sessionStorage.setItem(LOGOUT_HOME_REDIRECT_KEY, "true");
     setSessionUser(null);
     navigate("/", { replace: true });

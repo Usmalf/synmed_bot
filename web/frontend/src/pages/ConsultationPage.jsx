@@ -40,6 +40,8 @@ const QUEUED_PROMPT_MESSAGE =
   "You are now in the queue. Please remain on this page; a SynMed doctor will join your consultation shortly.";
 const TRANSCRIPT_PENDING_MESSAGE = "Your conversation will appear here once the consultation becomes active.";
 const SKIPPED_FEEDBACK_KEY = "synmed_skipped_feedback_consultations";
+const PENDING_FEEDBACK_KEY = "synmed_pending_consultation_feedback";
+const FEEDBACK_EXPIRY_MS = 24 * 60 * 60 * 1000;
 const BACKGROUND_THEME_KEY = "synmed-background-theme";
 const BACKGROUND_OPTIONS = [
   { key: "dark", label: "Dark" },
@@ -303,6 +305,22 @@ function saveSkippedFeedbackIds(ids) {
   window.localStorage.setItem(SKIPPED_FEEDBACK_KEY, JSON.stringify(ids));
 }
 
+function getPendingFeedback() {
+  try {
+    return JSON.parse(window.localStorage.getItem(PENDING_FEEDBACK_KEY) || "null");
+  } catch {
+    return null;
+  }
+}
+
+function savePendingFeedback(feedback) {
+  window.localStorage.setItem(PENDING_FEEDBACK_KEY, JSON.stringify(feedback));
+}
+
+function clearPendingFeedback() {
+  window.localStorage.removeItem(PENDING_FEEDBACK_KEY);
+}
+
 function shouldAutoFocusChatComposer() {
   return (
     typeof window !== "undefined" &&
@@ -457,13 +475,26 @@ export default function ConsultationPage() {
     ]);
   }
 
-  function showFeedbackCard(result, message = "Rate and review your doctor before leaving this consultation.") {
+function showFeedbackCard(result, message = "Rate and review your doctor before leaving this consultation.") {
     const consultationId = result?.consultation_id || "";
     if (consultationId && getSkippedFeedbackIds().includes(consultationId)) {
       return false;
     }
+    const pending = getPendingFeedback();
+    if (pending?.consultationId === consultationId && pending.expiresAt && Date.now() >= Number(pending.expiresAt)) {
+      const nextIds = Array.from(new Set([...getSkippedFeedbackIds(), consultationId]));
+      saveSkippedFeedbackIds(nextIds);
+      clearPendingFeedback();
+      return false;
+    }
 
     feedbackVisibleRef.current = true;
+    if (consultationId) {
+      savePendingFeedback({
+        consultationId,
+        expiresAt: Date.now() + FEEDBACK_EXPIRY_MS,
+      });
+    }
     setFeedbackState({
       visible: true,
       status: "idle",
@@ -483,6 +514,33 @@ export default function ConsultationPage() {
   function resetEndedStatusCandidate() {
     endedStatusCandidateRef.current = { consultationId: "", count: 0 };
   }
+
+  useEffect(() => {
+    function expirePendingFeedback() {
+      const pending = getPendingFeedback();
+      if (!pending?.consultationId || !pending.expiresAt || Date.now() < Number(pending.expiresAt)) {
+        return;
+      }
+      const nextIds = Array.from(new Set([...getSkippedFeedbackIds(), pending.consultationId]));
+      saveSkippedFeedbackIds(nextIds);
+      clearPendingFeedback();
+      feedbackVisibleRef.current = false;
+      setFeedbackState((current) => ({
+        ...current,
+        visible: false,
+        status: "idle",
+        message: "Rate and review your doctor before leaving this consultation.",
+      }));
+    }
+
+    expirePendingFeedback();
+    const intervalId = window.setInterval(expirePendingFeedback, 60 * 1000);
+    window.addEventListener("synmed:feedback-expired", expirePendingFeedback);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("synmed:feedback-expired", expirePendingFeedback);
+    };
+  }, []);
 
   function maybeShowFeedbackFromEndedStatus(result) {
     if (feedbackVisibleRef.current || result?.status !== "ended") {
@@ -1534,6 +1592,7 @@ export default function ConsultationPage() {
         const nextIds = getSkippedFeedbackIds().filter((item) => item !== feedbackState.consultationId);
         saveSkippedFeedbackIds(nextIds);
       }
+      clearPendingFeedback();
       setFeedbackState((current) => ({
         ...current,
         status: result.saved ? "success" : "error",
@@ -1558,6 +1617,7 @@ export default function ConsultationPage() {
       const nextIds = Array.from(new Set([...getSkippedFeedbackIds(), feedbackState.consultationId]));
       saveSkippedFeedbackIds(nextIds);
     }
+    clearPendingFeedback();
     setFeedbackState((current) => ({
       ...current,
       visible: false,

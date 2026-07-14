@@ -7,6 +7,7 @@ from services.operational_errors import log_exception, log_operational_error
 from ..services.whatsapp_service import (
     WhatsAppConfigurationError,
     build_whatsapp_reply,
+    handle_whatsapp_media_message,
     send_whatsapp_response,
 )
 
@@ -70,6 +71,46 @@ def _extract_text_messages(payload: dict) -> list[dict]:
     return messages
 
 
+def _extract_media_messages(payload: dict) -> list[dict]:
+    messages = []
+    entries = payload.get("entry") if isinstance(payload, dict) else []
+    if not isinstance(entries, list):
+        return messages
+
+    for entry in entries:
+        changes = entry.get("changes", []) if isinstance(entry, dict) else []
+        if not isinstance(changes, list):
+            continue
+        for change in changes:
+            value = change.get("value", {}) if isinstance(change, dict) else {}
+            inbound_messages = value.get("messages", []) if isinstance(value, dict) else []
+            if not isinstance(inbound_messages, list):
+                continue
+            for message in inbound_messages:
+                if not isinstance(message, dict):
+                    continue
+                message_type = message.get("type")
+                if message_type not in {"image", "video", "audio", "voice", "document"}:
+                    continue
+                media_payload = message.get(message_type) or {}
+                media_id = (media_payload.get("id") or "").strip()
+                sender = (message.get("from") or "").strip()
+                if not sender or not media_id:
+                    continue
+                messages.append(
+                    {
+                        "from": sender,
+                        "media_id": media_id,
+                        "media_type": message_type,
+                        "filename": media_payload.get("filename") or "",
+                        "caption": media_payload.get("caption") or "",
+                        "mime_type": media_payload.get("mime_type") or "",
+                        "message_id": message.get("id") or "",
+                    }
+                )
+    return messages
+
+
 @router.get("/webhook", response_class=PlainTextResponse)
 def verify_whatsapp_webhook(
     mode: str = Query(default="", alias="hub.mode"),
@@ -114,6 +155,7 @@ async def receive_whatsapp_webhook(request: Request):
 
     entries = payload.get("entry") if isinstance(payload, dict) else None
     text_messages = _extract_text_messages(payload)
+    media_messages = _extract_media_messages(payload)
     reply_count = 0
     for message in text_messages:
         try:
@@ -147,6 +189,38 @@ async def receive_whatsapp_webhook(request: Request):
                 details={"from": message.get("from"), "message_id": message.get("message_id")},
             )
 
+    for message in media_messages:
+        try:
+            reply = await handle_whatsapp_media_message(message)
+            if reply:
+                await send_whatsapp_response(message["from"], reply)
+                reply_count += 1
+        except WhatsAppConfigurationError as exc:
+            log_exception(
+                exc,
+                source="whatsapp_webhook_media",
+                path=str(request.url.path),
+                method=request.method,
+                status_code=503,
+            )
+        except Exception as exc:
+            log_exception(
+                exc,
+                source="whatsapp_webhook_media",
+                path=str(request.url.path),
+                method=request.method,
+                status_code=502,
+            )
+            log_operational_error(
+                source="whatsapp_webhook_media_context",
+                severity="warning",
+                message="WhatsApp media handling failed for inbound message.",
+                path=str(request.url.path),
+                method=request.method,
+                status_code=502,
+                details={"from": message.get("from"), "message_id": message.get("message_id")},
+            )
+
     log_operational_error(
         source="whatsapp_webhook",
         severity="info",
@@ -158,6 +232,7 @@ async def receive_whatsapp_webhook(request: Request):
             "object": payload.get("object") if isinstance(payload, dict) else "",
             "entries": len(entries) if isinstance(entries, list) else 0,
             "text_messages": len(text_messages),
+            "media_messages": len(media_messages),
             "replies": reply_count,
         },
     )

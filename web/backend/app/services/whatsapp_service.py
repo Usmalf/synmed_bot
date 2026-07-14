@@ -1,11 +1,14 @@
 import os
 import re
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from uuid import uuid4
 
 import httpx
 
 from database import get_connection
+from services import storage_service
 from services.emergency import detect_emergency
 from services.consultation_records import log_consultation_message
 from services.consent import CONSENT_POLICY_TEXT, CONSENT_SUMMARY, has_patient_consented, record_patient_consent
@@ -34,6 +37,7 @@ from .support_ai_service import create_support_ticket
 
 WHATSAPP_API_VERSION = os.getenv("WHATSAPP_API_VERSION", "v20.0").strip() or "v20.0"
 UTC = timezone.utc
+WHATSAPP_FEEDBACK_EXPIRY_HOURS = 24
 COMMAND_WORDS = {
     "hi",
     "hello",
@@ -98,6 +102,18 @@ def is_configured() -> bool:
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _parse_iso_datetime(value: str | None):
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
+    except (TypeError, ValueError):
+        return None
 
 
 def build_basic_menu(name: str = "") -> str:
@@ -308,7 +324,7 @@ def _rating_prompt() -> str:
     return (
         "Your consultation has ended. Thank you for using SynMed Telehealth.\n\n"
         "Please rate your doctor from 1 to 5.\n"
-        "You can also reply no thanks to skip."
+        "You can also reply no, skip, or no thanks to skip."
     )
 
 
@@ -316,7 +332,7 @@ def _normalize_feedback_reply(message_text: str) -> str:
     normalized = (message_text or "").strip().lower()
     if normalized.startswith("rating:"):
         value = normalized.split(":", 1)[1].strip()
-        if value in {"skip", "no_thanks", "no thanks"}:
+        if value in {"skip", "no", "no_thanks", "no thanks", "no thank you"}:
             return "no thanks"
         return value
     return normalized
@@ -369,6 +385,7 @@ async def send_whatsapp_rating_prompt(whatsapp_id: str, consultation: dict, pati
             "doctor_id": doctor_id,
             "patient_runtime_id": patient_id,
             "patient_id": (patient_details or {}).get("hospital_number", ""),
+            "expires_at": (datetime.now(UTC) + timedelta(hours=WHATSAPP_FEEDBACK_EXPIRY_HOURS)).isoformat(),
         },
         (patient_details or {}).get("name", ""),
     )
@@ -394,7 +411,14 @@ async def _handle_whatsapp_feedback(session: dict, message_text: str) -> str:
     whatsapp_id = session["whatsapp_id"]
     normalized = _normalize_feedback_reply(message_text)
     payload = dict(session.get("payload") or {})
-    if normalized in {"no thanks", "no thank you", "skip"}:
+    expires_at = _parse_iso_datetime(payload.get("expires_at"))
+    if expires_at and datetime.now(UTC) >= expires_at:
+        _clear_session(whatsapp_id)
+        return (
+            "The previous consultation feedback request has expired.\n\n"
+            "Reply menu to see options, or reply 2 to start a new consultation."
+        )
+    if normalized in {"no", "no thanks", "no thank you", "skip"}:
         return _skip_whatsapp_feedback(whatsapp_id)
     if not _rating_payload_is_valid(payload):
         _clear_session(whatsapp_id)
@@ -406,7 +430,7 @@ async def _handle_whatsapp_feedback(session: dict, message_text: str) -> str:
 
     if session["state"] == "awaiting_rating":
         if not normalized.isdigit() or int(normalized) < 1 or int(normalized) > 5:
-            return _wrong_step_reply("Please reply with a number from 1 to 5, or reply no thanks to skip.")
+            return _wrong_step_reply("Please reply with a number from 1 to 5, or reply no, skip, or no thanks to skip.")
         rating = int(normalized)
         if not has_rating(consultation_id):
             add_rating(consultation_id, doctor_id, patient_id, rating)
@@ -414,13 +438,13 @@ async def _handle_whatsapp_feedback(session: dict, message_text: str) -> str:
         _save_session(whatsapp_id, "awaiting_review", payload, session.get("name", ""))
         return (
             f"Thank you. You rated your doctor {rating}/5.\n\n"
-            "Would you like to leave a short review? Type your review, or reply no thanks."
+            "Would you like to leave a short review? Type your review, or reply no, skip, or no thanks."
         )
 
     if session["state"] == "awaiting_review":
         review = (message_text or "").strip()
         if len(review) < 2:
-            return _wrong_step_reply("Please type a short review, or reply no thanks to skip.")
+            return _wrong_step_reply("Please type a short review, or reply no, skip, or no thanks to skip.")
         if not has_review(consultation_id):
             add_review(consultation_id, doctor_id, patient_id, review)
         _clear_session(whatsapp_id)
@@ -1008,6 +1032,87 @@ async def _relay_patient_chat_message(whatsapp_id: str, message_text: str) -> st
     )
     touch_chat_activity(patient["id"])
     await realtime_hub.broadcast_message(consultation_id, message)
+    return ""
+
+
+def _extension_for_media(filename: str, content_type: str, media_type: str) -> str:
+    extension = Path(filename or "").suffix[:16]
+    if extension:
+        return extension
+    if content_type == "image/jpeg":
+        return ".jpg"
+    if content_type == "image/png":
+        return ".png"
+    if content_type == "video/mp4":
+        return ".mp4"
+    if content_type in {"audio/ogg", "audio/opus"} or media_type in {"audio", "voice"}:
+        return ".ogg"
+    if content_type == "application/pdf":
+        return ".pdf"
+    return ".bin"
+
+
+def _message_text_for_media(filename: str, content_type: str, media_type: str) -> str:
+    if media_type in {"audio", "voice"} or content_type.startswith("audio/"):
+        return "Voice message"
+    if media_type == "image" or content_type.startswith("image/"):
+        return filename or "Photo attachment"
+    if media_type == "video" or content_type.startswith("video/"):
+        return filename or "Video attachment"
+    return filename or "Document attachment"
+
+
+async def _download_whatsapp_media(media_id: str) -> tuple[bytes, str]:
+    token = _access_token()
+    if not token:
+        raise WhatsAppConfigurationError("WhatsApp access token is not configured.")
+
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        metadata_response = await client.get(
+            f"https://graph.facebook.com/{WHATSAPP_API_VERSION}/{media_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        metadata_response.raise_for_status()
+        metadata = metadata_response.json()
+        media_url = metadata.get("url")
+        content_type = metadata.get("mime_type") or "application/octet-stream"
+        if not media_url:
+            raise RuntimeError("WhatsApp media URL was not returned.")
+        media_response = await client.get(media_url, headers={"Authorization": f"Bearer {token}"})
+        media_response.raise_for_status()
+        return media_response.content, media_response.headers.get("content-type") or content_type
+
+
+async def handle_whatsapp_media_message(message: dict) -> str:
+    whatsapp_id = (message.get("from") or "").strip()
+    media_id = (message.get("media_id") or "").strip()
+    media_type = (message.get("media_type") or "document").strip().lower()
+    filename = (message.get("filename") or "").strip()
+    if not whatsapp_id or not media_id:
+        return ""
+
+    patient, consultation = _active_consultation_for_whatsapp(whatsapp_id)
+    if not patient or not consultation:
+        return "No active consultation is connected yet. Reply 2 to start or continue a consultation."
+
+    content, content_type = await _download_whatsapp_media(media_id)
+    extension = _extension_for_media(filename, content_type, media_type)
+    stored_name = f"whatsapp-{uuid4().hex}{extension}"
+    asset_path = f"consultation_media/chat_uploads/{stored_name}"
+    storage_service.save_bytes(asset_path, content)
+
+    consultation_id = consultation["consultation_id"]
+    message_text = _message_text_for_media(filename, content_type, media_type)
+    transcript_message = log_consultation_message(
+        consultation_id,
+        sender_id=patient["id"],
+        sender_role="patient_whatsapp",
+        message_text=message_text,
+        asset_path=asset_path,
+        asset_type=content_type,
+    )
+    touch_chat_activity(patient["id"])
+    await realtime_hub.broadcast_message(consultation_id, transcript_message)
     return ""
 
 
