@@ -107,6 +107,29 @@ def list_coupon_redemptions(code: str = "", limit: int = 100) -> list[dict]:
         return [dict(row) for row in cursor.fetchall()]
 
 
+def has_active_coupon_for_purpose(purpose: str) -> bool:
+    normalized_purpose = (purpose or "").strip().lower()
+    if normalized_purpose not in {"registration", "consultation"}:
+        return False
+    now = _now_iso()
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT c.code,
+                   COALESCE((SELECT COUNT(*) FROM coupon_redemptions r WHERE UPPER(r.coupon_code) = UPPER(c.code)), 0) AS used_count
+            FROM coupons c
+            WHERE c.active = 1
+              AND c.applies_to IN (?, 'both')
+              AND (c.expires_at IS NULL OR c.expires_at = '' OR c.expires_at > ?)
+              AND (c.max_uses IS NULL OR c.max_uses > COALESCE((SELECT COUNT(*) FROM coupon_redemptions r WHERE UPPER(r.coupon_code) = UPPER(c.code)), 0))
+            LIMIT 1
+            """,
+            (normalized_purpose, now),
+        )
+        return cursor.fetchone() is not None
+
+
 def create_coupon(payload: dict, *, admin_id: str | int | None = None) -> dict:
     code = normalize_coupon_code(payload.get("code"))
     if len(code) < 3:

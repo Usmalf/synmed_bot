@@ -16,7 +16,7 @@ from services.paystack import (
     mark_payment_verified,
     verify_transaction,
 )
-from services.coupons import CouponError, record_coupon_redemption, validate_coupon
+from services.coupons import CouponError, has_active_coupon_for_purpose, record_coupon_redemption, validate_coupon
 from services.patient_records import get_patient_by_identifier, register_patient, update_patient_record
 from .auth_service import hash_patient_password, send_patient_email_verification
 from .settings_service import get_payment_settings
@@ -37,7 +37,12 @@ RETURNING_PATIENT_LABEL = os.getenv(
 
 
 def get_payment_config() -> dict:
-    return get_payment_settings()
+    settings = get_payment_settings()
+    return {
+        **settings,
+        "registration_coupons_available": has_active_coupon_for_purpose("registration"),
+        "consultation_coupons_available": has_active_coupon_for_purpose("consultation"),
+    }
 
 
 def get_current_patient_payment_status(patient_identifier: str) -> dict:

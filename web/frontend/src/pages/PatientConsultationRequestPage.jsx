@@ -286,7 +286,7 @@ export default function PatientConsultationRequestPage() {
           </dl>
         ) : null}
 
-        {!hasValidPayment ? (
+        {!hasValidPayment && paymentConfig?.consultation_coupons_available ? (
           <label className="form-field patient-consultation-access__coupon">
             <span className="form-field__label">Coupon Code</span>
             <input

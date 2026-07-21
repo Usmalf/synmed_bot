@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Link } from "react-router-dom";
 import PasswordInput from "../components/PasswordInput.jsx";
-import { initializePayment, verifyPayment } from "../api/payments.js";
+import { fetchPaymentConfig, initializePayment, verifyPayment } from "../api/payments.js";
 import { loadPatientFlow, savePatientFlow } from "../lib/patientFlowStorage.js";
 import "../styles/forms.css";
 import "../styles/login.css";
@@ -25,6 +25,7 @@ export default function PatientRegistrationPage() {
   });
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [couponCode, setCouponCode] = useState("");
+  const [paymentConfig, setPaymentConfig] = useState(null);
   const [registrationState, setRegistrationState] = useState({
     status: flow.registrationPatient ? "success" : "idle",
     message: "",
@@ -39,6 +40,26 @@ export default function PatientRegistrationPage() {
     registrationState.status === "success" || paymentState.status === "success";
   const hasPendingPayment =
     paymentState.status === "loading" && Boolean(paymentState.payment && !registrationState.patient);
+
+  useEffect(() => {
+    let ignore = false;
+    async function loadPaymentConfig() {
+      try {
+        const result = await fetchPaymentConfig();
+        if (!ignore) {
+          setPaymentConfig(result);
+        }
+      } catch {
+        if (!ignore) {
+          setPaymentConfig(null);
+        }
+      }
+    }
+    loadPaymentConfig();
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -299,6 +320,7 @@ export default function PatientRegistrationPage() {
                   <span className="form-field__label">Prior Medical Conditions</span>
                   <input className="form-field__input" type="text" placeholder="Hypertension, diabetes, sickle cell, asthma..." value={registrationForm.medical_conditions} onChange={(event) => updateRegistrationField("medical_conditions", event.target.value)} />
                 </label>
+                {paymentConfig?.registration_coupons_available ? (
                 <label className="form-field">
                   <span className="form-field__label">Coupon Code</span>
                   <input
@@ -309,6 +331,7 @@ export default function PatientRegistrationPage() {
                     onChange={(event) => setCouponCode(event.target.value.toUpperCase())}
                   />
                 </label>
+                ) : null}
                 <label className="login-page__checkbox">
                   <input
                     className="login-page__checkbox-input"

@@ -18,6 +18,7 @@ from services.paystack import (
     PaystackError,
     build_backend_callback_url,
     build_frontend_callback_url,
+    create_payment_record,
     create_payment_reference,
     get_latest_valid_payment_for_patient,
     get_payment_by_reference,
@@ -26,6 +27,12 @@ from services.paystack import (
     mark_payment_status,
     mark_payment_verified,
     verify_transaction,
+)
+from services.coupons import (
+    CouponError,
+    has_active_coupon_for_purpose,
+    record_coupon_redemption,
+    validate_coupon,
 )
 from synmed_utils.active_chats import end_chat, get_last_consultation, is_in_chat, touch_chat_activity
 import synmed_utils.doctor_registry as registry
@@ -679,6 +686,18 @@ def _consultation_payment_config(patient_type: str) -> dict:
     }
 
 
+def _coupon_prompt(purpose: str) -> str:
+    label = "registration" if purpose == "registration" else "consultation"
+    return (
+        f"Do you have a SynMed coupon code for this {label}?\n\n"
+        "Reply with the coupon code, or reply skip to continue without one."
+    )
+
+
+def _is_coupon_skip(text: str) -> bool:
+    return (text or "").strip().lower() in {"skip", "no", "none", "nil", "no thanks", "continue"}
+
+
 async def _initialize_whatsapp_payment(
     *,
     patient_type: str,
@@ -686,18 +705,39 @@ async def _initialize_whatsapp_payment(
     whatsapp_id: str,
     patient: dict | None = None,
     registration: dict | None = None,
+    coupon_code: str = "",
 ) -> dict:
     config = _consultation_payment_config(patient_type)
+    amount = config["amount"]
+    purpose = "registration" if patient_type == "new" else "consultation"
+    patient_id = (patient or {}).get("hospital_number") or ""
+    phone = (patient or {}).get("phone") or (registration or {}).get("phone") or _patient_phone_from_whatsapp_id(whatsapp_id)
     reference = create_payment_reference(prefix="wa")
     metadata = {
         "patient_type": patient_type,
-        "patient_id": (patient or {}).get("hospital_number") or "",
+        "patient_id": patient_id,
         "source": "whatsapp",
         "telegram_id": 0,
         "whatsapp_id": whatsapp_id,
     }
     if registration:
         metadata["registration_payload_json"] = json.dumps(registration)
+    try:
+        coupon = validate_coupon(
+            code=coupon_code,
+            purpose=purpose,
+            amount=amount,
+            patient_id=patient_id,
+            email=email,
+            phone=phone,
+        )
+    except CouponError as exc:
+        raise PaystackError(str(exc)) from exc
+    if coupon["applied"]:
+        metadata["coupon_code"] = coupon["code"]
+        metadata["original_amount"] = coupon["amount_before"]
+        metadata["discount_amount"] = coupon["discount_amount"]
+        amount = coupon["amount_after"]
     callback_url = build_backend_callback_url(
         "/payments/whatsapp-return",
         {"reference": reference},
@@ -705,9 +745,38 @@ async def _initialize_whatsapp_payment(
         "/signin",
         {"payment_reference": reference, "reference": reference, "status": "success"},
     )
+    if amount == 0 and coupon["applied"]:
+        create_payment_record(
+            reference=reference,
+            telegram_id=0,
+            patient_id=patient_id,
+            email=email,
+            amount=0,
+            currency=config["currency"],
+            patient_type=patient_type,
+            label=config["label"],
+            registration_payload_json=metadata.get("registration_payload_json"),
+            original_amount=coupon["amount_before"],
+            discount_amount=coupon["discount_amount"],
+            coupon_code=coupon["code"],
+        )
+        mark_payment_verified(reference, paystack_status="coupon_free", patient_id=patient_id or None)
+        return {
+            "reference": reference,
+            "authorization_url": "",
+            "amount": 0,
+            "currency": config["currency"],
+            "label": config["label"],
+            "coupon": {
+                "code": coupon["code"],
+                "discount_amount": coupon["discount_amount"],
+                "original_amount": coupon["amount_before"],
+                "amount_after": 0,
+            },
+        }
     result = await initialize_transaction(
         email=email,
-        amount_ngn=config["amount"],
+        amount_ngn=amount,
         currency=config["currency"],
         reference=reference,
         label=config["label"],
@@ -717,15 +786,39 @@ async def _initialize_whatsapp_payment(
     return {
         "reference": reference,
         "authorization_url": result["authorization_url"],
-        "amount": config["amount"],
+        "amount": amount,
         "currency": config["currency"],
         "label": config["label"],
+        "coupon": (
+            {
+                "code": coupon["code"],
+                "discount_amount": coupon["discount_amount"],
+                "original_amount": coupon["amount_before"],
+                "amount_after": coupon["amount_after"],
+            }
+            if coupon["applied"]
+            else None
+        ),
     }
 
 
 def _payment_prompt(payment: dict) -> str:
+    coupon_line = ""
+    if payment.get("coupon"):
+        coupon_line = (
+            f"Coupon {payment['coupon']['code']} applied. "
+            f"You saved {payment['currency']} {payment['coupon']['discount_amount']:,}.\n"
+        )
+    if not payment.get("authorization_url"):
+        return (
+            f"{payment['label']}\n"
+            f"{coupon_line}"
+            "No payment is required.\n\n"
+            f"Reference: {payment['reference']}"
+        )
     return (
         f"{payment['label']}\n"
+        f"{coupon_line}"
         f"Amount: {payment['currency']} {payment['amount']:,}\n\n"
         f"Pay here: {payment['authorization_url']}\n\n"
         f"After payment, reply: paid {payment['reference']}"
@@ -794,6 +887,9 @@ async def _continue_registration(session: dict, text: str) -> str:
     if state == "register_allergy":
         payload["allergy"] = "" if value.lower() in {"none", "nil", "no"} else value
         payload.setdefault("medical_conditions", "")
+        if has_active_coupon_for_purpose("registration"):
+            _save_session(whatsapp_id, "register_coupon", payload, session.get("name", ""))
+            return _coupon_prompt("registration")
         try:
             payment = await _initialize_whatsapp_payment(
                 patient_type="new",
@@ -806,6 +902,33 @@ async def _continue_registration(session: dict, text: str) -> str:
         except Exception:
             return "Unable to start payment right now. Please try again shortly."
         payload["payment_reference"] = payment["reference"]
+        if not payment.get("authorization_url"):
+            _save_session(whatsapp_id, "awaiting_payment", payload, session.get("name", ""))
+            return await _verify_whatsapp_payment(payment["reference"], whatsapp_id, session.get("name", ""))
+        _save_session(whatsapp_id, "awaiting_payment", payload, session.get("name", ""))
+        return (
+            "Your registration details have been saved pending payment.\n\n"
+            f"{_payment_prompt(payment)}"
+        )
+
+    if state == "register_coupon":
+        coupon_code = "" if _is_coupon_skip(value) else value
+        try:
+            payment = await _initialize_whatsapp_payment(
+                patient_type="new",
+                email=payload["email"],
+                whatsapp_id=whatsapp_id,
+                registration=payload,
+                coupon_code=coupon_code,
+            )
+        except PaystackError as exc:
+            return f"Unable to start payment right now: {exc}"
+        except Exception:
+            return "Unable to start payment right now. Please try again shortly."
+        payload["payment_reference"] = payment["reference"]
+        if not payment.get("authorization_url"):
+            _save_session(whatsapp_id, "awaiting_payment", payload, session.get("name", ""))
+            return await _verify_whatsapp_payment(payment["reference"], whatsapp_id, session.get("name", ""))
         _save_session(whatsapp_id, "awaiting_payment", payload, session.get("name", ""))
         return (
             "Your registration details have been saved pending payment.\n\n"
@@ -825,17 +948,22 @@ async def _verify_whatsapp_payment(reference: str, whatsapp_id: str, name: str =
             _save_session(whatsapp_id, "awaiting_symptoms", {"patient_id": patient["hospital_number"], "reference": reference}, name)
             return "Payment is already verified.\n\nPlease describe your symptoms so I can place you in the doctor queue."
 
-    try:
-        verification = await verify_transaction(reference)
-    except PaystackError as exc:
-        return f"Unable to verify payment right now: {exc}"
-    except Exception:
-        return "Unable to verify payment right now. Please try again shortly."
+    if payment["status"] == "verified" and payment["paystack_status"] == "coupon_free":
+        paystack_status = "coupon_free"
+        amount_ngn = int(payment["amount"] or 0)
+        currency = payment["currency"]
+    else:
+        try:
+            verification = await verify_transaction(reference)
+        except PaystackError as exc:
+            return f"Unable to verify payment right now: {exc}"
+        except Exception:
+            return "Unable to verify payment right now. Please try again shortly."
 
-    paystack_status = (verification.get("status") or "").lower()
-    amount_ngn = int(verification.get("amount", 0)) // 100
-    currency = verification.get("currency")
-    if paystack_status != "success":
+        paystack_status = (verification.get("status") or "").lower()
+        amount_ngn = int(verification.get("amount", 0)) // 100
+        currency = verification.get("currency")
+    if paystack_status not in {"success", "coupon_free"}:
         mark_payment_status(reference, status="pending_verification", paystack_status=paystack_status or "pending")
         return "Payment is not confirmed yet. If you have just paid, please wait a moment and reply with the payment reference again."
     if amount_ngn != payment["amount"] or currency != payment["currency"]:
@@ -872,6 +1000,18 @@ async def _verify_whatsapp_payment(reference: str, whatsapp_id: str, name: str =
         return "Payment was verified, but I could not find the patient record attached to it. Please contact customer care."
 
     mark_payment_verified(reference, paystack_status=paystack_status, patient_id=patient["hospital_number"])
+    if payment["coupon_code"]:
+        record_coupon_redemption(
+            reference=reference,
+            code=payment["coupon_code"],
+            purpose="registration" if payment["patient_type"] == "new" else "consultation",
+            amount_before=int(payment["original_amount"] or payment["amount"] or 0),
+            discount_amount=int(payment["discount_amount"] or 0),
+            amount_after=int(payment["amount"] or 0),
+            patient_id=patient["hospital_number"],
+            email=payment["email"] or patient.get("email") or "",
+            phone=patient.get("phone") or "",
+        )
     _save_session(whatsapp_id, "awaiting_symptoms", {"patient_id": patient["hospital_number"], "reference": reference}, name)
     return (
         f"Payment verified for {patient['name']} ({patient['hospital_number']}).\n\n"
@@ -923,6 +1063,12 @@ async def _start_consultation_reply(whatsapp_id: str, name: str = "") -> str:
             f"I found an active consultation payment for {patient['name']} ({patient['hospital_number']}).\n\n"
             "Please describe your symptoms so I can place you in the doctor queue."
         )
+    if has_active_coupon_for_purpose("consultation"):
+        _save_session(whatsapp_id, "consultation_coupon", {"patient_id": patient["hospital_number"]}, name)
+        return (
+            f"I found your SynMed record as {patient['name']} ({patient['hospital_number']}).\n\n"
+            f"{_coupon_prompt('consultation')}"
+        )
     try:
         initialized = await _initialize_whatsapp_payment(
             patient_type="returning",
@@ -939,6 +1085,46 @@ async def _start_consultation_reply(whatsapp_id: str, name: str = "") -> str:
         "awaiting_payment",
         {"patient_id": patient["hospital_number"], "reference": initialized["reference"]},
         name,
+    )
+    return (
+        f"I found your SynMed record as {patient['name']} ({patient['hospital_number']}).\n\n"
+        f"{_payment_prompt(initialized)}"
+    )
+
+
+async def _continue_consultation_coupon(session: dict, text: str) -> str:
+    whatsapp_id = session["whatsapp_id"]
+    payload = dict(session.get("payload") or {})
+    patient = get_patient_by_identifier(payload.get("patient_id") or "") or _lookup_patient_from_phone(whatsapp_id)
+    if not patient:
+        _clear_session(whatsapp_id)
+        return "Patient record missing. Reply 1 to register or 5 to contact customer care."
+    coupon_code = "" if _is_coupon_skip(text) else text.strip()
+    try:
+        initialized = await _initialize_whatsapp_payment(
+            patient_type="returning",
+            email=patient.get("email") or f"{_digits(whatsapp_id)}@synmed.whatsapp",
+            whatsapp_id=whatsapp_id,
+            patient=patient,
+            coupon_code=coupon_code,
+        )
+    except PaystackError as exc:
+        return f"Unable to start payment right now: {exc}"
+    except Exception:
+        return "Unable to start payment right now. Please try again shortly."
+    if not initialized.get("authorization_url"):
+        _save_session(
+            whatsapp_id,
+            "awaiting_payment",
+            {"patient_id": patient["hospital_number"], "reference": initialized["reference"]},
+            session.get("name", ""),
+        )
+        return await _verify_whatsapp_payment(initialized["reference"], whatsapp_id, session.get("name", ""))
+    _save_session(
+        whatsapp_id,
+        "awaiting_payment",
+        {"patient_id": patient["hospital_number"], "reference": initialized["reference"]},
+        session.get("name", ""),
     )
     return (
         f"I found your SynMed record as {patient['name']} ({patient['hospital_number']}).\n\n"
@@ -1246,6 +1432,8 @@ async def build_whatsapp_reply(message_text: str, name: str = "", sender: str = 
         return build_basic_menu(name)
     if session and session["state"].startswith("register_"):
         return await _continue_registration(session, message_text)
+    if session and session["state"] == "consultation_coupon":
+        return await _continue_consultation_coupon(session, message_text)
     if session and session["state"] == "awaiting_symptoms" and normalized not in COMMAND_WORDS and not normalized.startswith("paid"):
         return await _queue_whatsapp_consultation(sender, message_text, session, name)
     if session and session["state"] == "awaiting_payment" and not normalized.startswith("paid"):

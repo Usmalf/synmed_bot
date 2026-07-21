@@ -480,6 +480,64 @@ class TestPersistenceStores(unittest.TestCase):
         self.assertEqual(len(redemptions), 1)
         self.assertEqual(redemptions[0]["discount_amount"], 3000)
 
+    def test_whatsapp_registration_coupon_completes_without_paystack(self):
+        self._record_whatsapp_consent()
+        create_coupon(
+            {
+                "code": "WAFREE100",
+                "applies_to": "registration",
+                "discount_type": "free",
+                "discount_value": 100,
+                "max_uses": 5,
+                "per_user_limit": 1,
+            },
+            admin_id="1",
+        )
+        now = datetime.now(timezone.utc).isoformat()
+        payload = {
+            "phone": "08107840312",
+            "whatsapp_id": "2348107840312",
+            "name": "WhatsApp Coupon Patient",
+            "age": 31,
+            "gender": "Male",
+            "email": "wa.coupon@example.com",
+            "address": "Abuja",
+            "allergy": "",
+            "medical_conditions": "",
+        }
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO whatsapp_sessions (whatsapp_id, name, state, payload_json, updated_at, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "2348107840312",
+                    "WhatsApp Coupon Patient",
+                    "register_coupon",
+                    json.dumps(payload),
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+
+        with patch(
+            "web.backend.app.services.whatsapp_service.send_patient_web_access_setup",
+            return_value={"delivered": True, "channel": "email"},
+        ):
+            reply = asyncio.run(build_whatsapp_reply("WAFREE100", name="WhatsApp Coupon Patient", sender="2348107840312"))
+
+        patient = get_patient_by_identifier("wa.coupon@example.com")
+        redemptions = list_coupon_redemptions("WAFREE100")
+
+        self.assertIn("Payment verified", reply)
+        self.assertIn("describe your symptoms", reply)
+        self.assertEqual(patient["name"], "WhatsApp Coupon Patient")
+        self.assertEqual(len(redemptions), 1)
+        self.assertEqual(redemptions[0]["amount_after"], 0)
+
     def test_whatsapp_wrong_registration_response_keeps_step_and_start_resets(self):
         self._record_whatsapp_consent()
         timestamp = datetime.now(timezone.utc).isoformat()
