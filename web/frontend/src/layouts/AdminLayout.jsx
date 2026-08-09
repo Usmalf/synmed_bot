@@ -72,7 +72,7 @@ export default function AdminLayout() {
     let ignore = false;
     async function loadTicketLogBadge() {
       try {
-        const result = await fetchAdminSupportTickets("all");
+        const result = await fetchAdminSupportTickets("open");
         if (ignore) return;
         const unread = (result.tickets || []).reduce(
           (total, ticket) => total + Number(ticket.unread_patient_messages || 0),

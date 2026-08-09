@@ -677,6 +677,7 @@ export function AdminPatientsPage() {
   const [sendForm, setSendForm] = useState(null);
   const [manualPatientForm, setManualPatientForm] = useState(null);
   const [archiveDialog, setArchiveDialog] = useState(null);
+  const [grantForm, setGrantForm] = useState(null);
   const [busy, setBusy] = useState(false);
 
   async function load(search = query) {
@@ -724,6 +725,7 @@ export function AdminPatientsPage() {
   function closePatient() {
     setDetailState({ status: "idle", message: "", detail: null });
     setSendForm(null);
+    setGrantForm(null);
     setSearchParams({});
   }
 
@@ -798,6 +800,35 @@ export function AdminPatientsPage() {
       window.dispatchEvent(new Event("synmed:admin-notifications-updated"));
     } catch (error) {
       setState((current) => ({ ...current, status: "error", message: error.message || "Unable to archive patient record." }));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitPatientAccessGrant(event) {
+    event.preventDefault();
+    if (!grantForm) return;
+    setBusy(true);
+    setDetailState((current) => ({ ...current, status: "loading", message: "Granting consultation access..." }));
+    try {
+      const result = await grantAdminConsultationAccess({
+        patient_id: grantForm.patient_id,
+        reason: grantForm.reason,
+        duration_hours: Number(grantForm.duration_hours),
+      });
+      setGrantForm(null);
+      setDetailState((current) => ({
+        ...current,
+        status: "success",
+        message: result.message || "Consultation access granted.",
+      }));
+      window.dispatchEvent(new Event("synmed:admin-notifications-updated"));
+    } catch (error) {
+      setDetailState((current) => ({
+        ...current,
+        status: "error",
+        message: error.message || "Unable to grant consultation access.",
+      }));
     } finally {
       setBusy(false);
     }
@@ -879,7 +910,15 @@ export function AdminPatientsPage() {
               </div>
               <div className="admin-row-actions">
                 {!detailState.detail.patient.archived_at ? (
-                  <button type="button" onClick={() => requestArchivePatient(detailState.detail.patient)}>Archive</button>
+                  <>
+                    <button type="button" onClick={() => setGrantForm({
+                      patient_id: detailState.detail.patient.patient_id,
+                      patient_name: detailState.detail.patient.name,
+                      reason: "",
+                      duration_hours: 24,
+                    })}>Grant access</button>
+                    <button type="button" onClick={() => requestArchivePatient(detailState.detail.patient)}>Archive</button>
+                  </>
                 ) : null}
                 <button type="button" onClick={closePatient} aria-label="Close patient biodata">Close</button>
               </div>
@@ -899,6 +938,15 @@ export function AdminPatientsPage() {
                 ["Archive reason", detailState.detail.patient.archived_reason || "N/A"],
               ].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value || "Not recorded"}</strong></div>)}
             </div>
+            {grantForm ? (
+              <form className="admin-document-send" onSubmit={submitPatientAccessGrant}>
+                <h3>Grant consultation access</h3>
+                <p>Allow {grantForm.patient_name || "this patient"} ({grantForm.patient_id}) to start a consultation without initiating payment.</p>
+                <label><span>Access duration</span><select value={grantForm.duration_hours} onChange={(event) => setGrantForm((current) => ({ ...current, duration_hours: event.target.value }))}><option value="1">1 hour</option><option value="6">6 hours</option><option value="12">12 hours</option><option value="24">24 hours</option><option value="48">48 hours</option><option value="168">7 days</option></select></label>
+                <label><span>Reason</span><textarea required rows="2" value={grantForm.reason} onChange={(event) => setGrantForm((current) => ({ ...current, reason: event.target.value }))} placeholder="Example: Bank transfer confirmed, complimentary access, payment dispute resolved..." /></label>
+                <div className="admin-form__actions"><button className="button button--primary" type="submit" disabled={busy}>{busy ? "Granting..." : "Grant access"}</button><button className="button button--secondary" type="button" onClick={() => setGrantForm(null)}>Cancel</button></div>
+              </form>
+            ) : null}
             <div className="admin-record-card__documents">
               <h3>Clinical documents</h3>
               {detailState.detail.documents.map((document) => (

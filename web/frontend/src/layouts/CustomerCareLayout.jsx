@@ -66,9 +66,8 @@ export default function CustomerCareLayout() {
           (total, ticket) => total + Number(ticket.unread_patient_messages || 0),
           0,
         );
-        const openTickets = (desk.support_tickets || []).filter((ticket) => ticket.status === "open").length;
         setBadgeCounts({
-          tickets: unreadTicketMessages || openTickets,
+          tickets: unreadTicketMessages,
           messages: (mail.messages || []).filter((message) => !message.read_at).length,
         });
       } catch {}
