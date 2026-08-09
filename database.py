@@ -350,6 +350,9 @@ def init_db():
             "medical_conditions": "TEXT",
             "password_hash": "TEXT",
             "updated_at": "TEXT",
+            "archived_at": "TEXT",
+            "archived_by_admin_id": "INTEGER",
+            "archived_reason": "TEXT",
         },
     )
 

@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Link } from "react-router-dom";
 import PasswordInput from "../components/PasswordInput.jsx";
-import { fetchPaymentConfig, initializePayment, verifyPayment } from "../api/payments.js";
+import { registerPatient } from "../api/patients.js";
 import { loadPatientFlow, savePatientFlow } from "../lib/patientFlowStorage.js";
 import "../styles/forms.css";
 import "../styles/login.css";
@@ -10,7 +10,6 @@ import "../styles/patient.css";
 
 export default function PatientRegistrationPage() {
   const navigate = useNavigate();
-  const location = useLocation();
   const flow = loadPatientFlow();
   const [registrationForm, setRegistrationForm] = useState({
     name: "",
@@ -24,172 +23,12 @@ export default function PatientRegistrationPage() {
     password: "",
   });
   const [termsAccepted, setTermsAccepted] = useState(false);
-  const [couponCode, setCouponCode] = useState("");
-  const [paymentConfig, setPaymentConfig] = useState(null);
   const [registrationState, setRegistrationState] = useState({
     status: flow.registrationPatient ? "success" : "idle",
     message: "",
     patient: flow.registrationPatient,
   });
-  const [paymentState, setPaymentState] = useState({
-    status: flow.newPayment ? "restored" : "idle",
-    message: "",
-    payment: flow.newPayment,
-  });
-  const registrationCompleted =
-    registrationState.status === "success" || paymentState.status === "success";
-  const hasPendingPayment =
-    paymentState.status === "loading" && Boolean(paymentState.payment && !registrationState.patient);
-
-  useEffect(() => {
-    let ignore = false;
-    async function loadPaymentConfig() {
-      try {
-        const result = await fetchPaymentConfig();
-        if (!ignore) {
-          setPaymentConfig(result);
-        }
-      } catch {
-        if (!ignore) {
-          setPaymentConfig(null);
-        }
-      }
-    }
-    loadPaymentConfig();
-    return () => {
-      ignore = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const callbackReference = (params.get("payment_reference") || params.get("reference") || params.get("trxref") || "").trim();
-    const verified = params.get("verified");
-    const callbackMessage = params.get("message") || "";
-    if (!callbackReference || registrationState.patient) {
-      return;
-    }
-
-    if (verified === "1") {
-      const message =
-        callbackMessage ||
-        "Registration payment confirmed. We have sent a verification link to your email. Please verify your email before signing in.";
-      setPaymentState({
-        status: "success",
-        message,
-        payment: { reference: callbackReference, paystack_status: params.get("status") || "success" },
-      });
-      setRegistrationState({
-        status: "success",
-        message,
-        patient: null,
-      });
-      savePatientFlow({
-        newPayment: { reference: callbackReference, paystack_status: params.get("status") || "success" },
-      });
-      window.setTimeout(() => {
-        navigate("/signin", { replace: true });
-      }, 4500);
-      return;
-    }
-
-    if (verified === "0" && params.get("status")) {
-      setPaymentState({
-        status: "error",
-        message: callbackMessage || "Payment could not be verified. Please contact SynMed support with your payment reference.",
-        payment: { reference: callbackReference, paystack_status: params.get("status") || "verification_error" },
-      });
-      return;
-    }
-
-    setPaymentState((current) => {
-      if (current.payment?.reference === callbackReference && current.status === "loading") {
-        return {
-          ...current,
-          message: current.message || "Confirming your registration payment...",
-        };
-      }
-      return {
-        status: "loading",
-        message: "Confirming your registration payment...",
-        payment: {
-          ...(current.payment || {}),
-          reference: callbackReference,
-        },
-      };
-    });
-    savePatientFlow({
-      newPayment: {
-        reference: callbackReference,
-      },
-    });
-  }, [location.search, navigate, registrationState.patient]);
-
-  useEffect(() => {
-    if (!paymentState.payment?.reference || registrationState.patient) {
-      return undefined;
-    }
-
-    let cancelled = false;
-    let timeoutId = null;
-
-    async function pollVerification() {
-      try {
-        const result = await verifyPayment(paymentState.payment.reference);
-        if (cancelled) {
-          return;
-        }
-
-        if (result.verified && result.patient) {
-          setPaymentState({
-            status: "success",
-            message: "",
-            payment: result,
-          });
-          setRegistrationState({
-            status: "success",
-            message: "",
-            patient: result.patient,
-          });
-          savePatientFlow({
-            registrationPatient: result.patient,
-            newPayment: result,
-          });
-          window.setTimeout(() => {
-            navigate("/signin", { replace: true });
-          }, 1600);
-          return;
-        }
-
-        setPaymentState((current) => ({
-          ...current,
-          status: "pending",
-          message: "",
-        }));
-      } catch {
-        if (!cancelled) {
-          setPaymentState((current) => ({
-            ...current,
-            status: current.payment?.paystack_status === "success" ? "pending" : current.status,
-            message: current.message,
-          }));
-        }
-      }
-
-      if (!cancelled) {
-        timeoutId = window.setTimeout(pollVerification, 5000);
-      }
-    }
-
-    timeoutId = window.setTimeout(pollVerification, 2500);
-
-    return () => {
-      cancelled = true;
-      if (timeoutId) {
-        window.clearTimeout(timeoutId);
-      }
-    };
-  }, [navigate, paymentState.payment?.reference, paymentState.payment?.paystack_status, registrationState.patient]);
+  const registrationCompleted = registrationState.status === "success";
 
   function updateRegistrationField(field, value) {
     setRegistrationForm((current) => ({
@@ -201,74 +40,41 @@ export default function PatientRegistrationPage() {
   async function handleRegistrationSubmit(event) {
     event.preventDefault();
     if (!termsAccepted) {
-      setPaymentState({
+      setRegistrationState({
         status: "error",
         message: "Please agree to the Terms and Conditions before registration.",
-        payment: null,
+        patient: null,
       });
       return;
     }
-    setPaymentState({
-      status: "loading",
-      message: "Initializing registration payment...",
-      payment: null,
-    });
     setRegistrationState({
-      status: "idle",
-      message: "Payment is being prepared. Complete payment to finish registration.",
+      status: "loading",
+      message: "Creating your SynMed account...",
       patient: null,
     });
 
     try {
-      const result = await initializePayment({
-        email: registrationForm.email.trim(),
-        patient_type: "new",
-        callback_path: "/patient/register",
-        coupon_code: couponCode.trim(),
-        registration_payload: {
-          ...registrationForm,
-          age: Number(registrationForm.age),
-        },
+      const result = await registerPatient({
+        ...registrationForm,
+        age: Number(registrationForm.age),
       });
-      setPaymentState({
-        status: "loading",
-        message: "Redirecting to secure payment...",
-        payment: result,
+      setRegistrationState({
+        status: "success",
+        message: result.message,
+        patient: result.patient || null,
       });
       savePatientFlow({
-        newPayment: result,
+        registrationPatient: result.patient || null,
+        newPayment: null,
       });
-      if (result.authorization_url) {
-        window.setTimeout(() => {
-          window.location.assign(result.authorization_url);
-        }, 450);
-      } else if (result.reference) {
-        const verification = await verifyPayment(result.reference);
-        setPaymentState({
-          status: verification.verified ? "success" : "pending",
-          message: verification.message || result.message,
-          payment: verification,
-        });
-        setRegistrationState({
-          status: verification.verified ? "success" : "idle",
-          message: verification.message || "",
-          patient: verification.patient || null,
-        });
-        savePatientFlow({
-          registrationPatient: verification.patient || null,
-          newPayment: verification,
-        });
-        if (verification.verified) {
-          window.setTimeout(() => {
-            navigate("/signin", { replace: true });
-          }, 3000);
-        }
-      }
+      window.setTimeout(() => {
+        navigate("/signin", { replace: true });
+      }, 3500);
     } catch (error) {
-      setPaymentState({
+      setRegistrationState({
         status: "error",
-        message: error.message || "Unable to initialize registration payment.",
-        payment: null,
+        message: error.message || "Unable to complete registration.",
+        patient: null,
       });
     }
   }
@@ -280,8 +86,7 @@ export default function PatientRegistrationPage() {
           <img className="login-page__brand-logo" src="/logo-removebg-preview.png" alt="SynMed Telehealth" />
         </div>
 
-        {hasPendingPayment ? <h2 className="login-page__inline-title">Confirming your registration</h2> : null}
-          {!hasPendingPayment && !registrationCompleted ? (
+          {!registrationCompleted ? (
             <>
               <form className="form-panel" onSubmit={handleRegistrationSubmit}>
                 <label className="form-field">
@@ -320,18 +125,6 @@ export default function PatientRegistrationPage() {
                   <span className="form-field__label">Prior Medical Conditions</span>
                   <input className="form-field__input" type="text" placeholder="Hypertension, diabetes, sickle cell, asthma..." value={registrationForm.medical_conditions} onChange={(event) => updateRegistrationField("medical_conditions", event.target.value)} />
                 </label>
-                {paymentConfig?.registration_coupons_available ? (
-                <label className="form-field">
-                  <span className="form-field__label">Coupon Code</span>
-                  <input
-                    className="form-field__input"
-                    type="text"
-                    placeholder="Optional"
-                    value={couponCode}
-                    onChange={(event) => setCouponCode(event.target.value.toUpperCase())}
-                  />
-                </label>
-                ) : null}
                 <label className="login-page__checkbox">
                   <input
                     className="login-page__checkbox-input"
@@ -344,8 +137,8 @@ export default function PatientRegistrationPage() {
                     I agree to the <Link to="/terms" target="_blank" rel="noreferrer">Terms and Conditions</Link>.
                   </span>
                 </label>
-                <button className="button button--primary login-page__button" type="submit" disabled={!termsAccepted}>
-                  Register
+                <button className="button button--primary login-page__button" type="submit" disabled={!termsAccepted || registrationState.status === "loading"}>
+                  {registrationState.status === "loading" ? "Creating account..." : "Register"}
                 </button>
               </form>
 
@@ -355,19 +148,11 @@ export default function PatientRegistrationPage() {
                 </p>
               </div>
             </>
-          ) : !registrationCompleted ? (
-            <div className="login-page__status-panel">
-              <div className={`lookup-result lookup-result--${paymentState.status}`}>
-                <p className="lookup-result__message">
-                  {paymentState.message || "Confirming your registration payment..."}
-                </p>
-              </div>
-            </div>
           ) : (
             <div className="login-page__status-panel">
               <div className="lookup-result lookup-result--success">
                 <p className="lookup-result__message">
-                  {paymentState.message ||
+                  {registrationState.message ||
                     "Registration completed. Please check your email and verify your account before signing in."}
                 </p>
                 <div className="payment-actions">
@@ -379,18 +164,9 @@ export default function PatientRegistrationPage() {
             </div>
           )}
 
-          {paymentState.status === "error" && !registrationCompleted ? (
-            <div className={`lookup-result lookup-result--${paymentState.status}`}>
-              <p className="lookup-result__message">{paymentState.message}</p>
-            </div>
-          ) : null}
-          {!hasPendingPayment && paymentState.payment?.authorization_url && paymentState.status !== "restored" ? (
-            <div className={`lookup-result lookup-result--${paymentState.status}`}>
-              <div className="payment-actions">
-                <a className="button button--secondary" href={paymentState.payment.authorization_url} target="_blank" rel="noreferrer">
-                  Open Paystack Checkout
-                </a>
-              </div>
+          {registrationState.status === "error" && !registrationCompleted ? (
+            <div className={`lookup-result lookup-result--${registrationState.status}`}>
+              <p className="lookup-result__message">{registrationState.message}</p>
             </div>
           ) : null}
 

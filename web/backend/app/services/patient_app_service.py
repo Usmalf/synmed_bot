@@ -147,10 +147,22 @@ def register_web_patient(payload: dict) -> dict:
         password_hash=hash_patient_password(payload.get("password", "")),
         email=normalized_email,
     )
+    verification_delivery = None
+    verification_email_result = None
+    if normalized_email:
+        verification_delivery = normalized_email
+        verification_email_result = send_patient_email_verification(
+            hospital_number=patient["hospital_number"],
+            email=normalized_email,
+        )
 
     return {
         "created": True,
-        "message": "Patient registration completed.",
+        "message": (
+            "Registration completed, but the verification email could not be sent. Please contact SynMed support or try account recovery."
+            if verification_email_result and not verification_email_result.get("delivered")
+            else "Registration completed. We have sent a verification link to your email. Verify your email before signing in."
+        ),
         "patient": {
             "internal_id": patient["id"],
             "hospital_number": patient["hospital_number"],
@@ -163,6 +175,8 @@ def register_web_patient(payload: dict) -> dict:
             "allergy": patient.get("allergy") or "",
             "medical_conditions": patient.get("medical_conditions") or "",
         },
+        "requires_email_verification": True,
+        "verification_delivery": verification_delivery,
     }
 
 

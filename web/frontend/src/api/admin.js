@@ -181,6 +181,17 @@ export async function createAdminPatientManual(payload) {
   return body;
 }
 
+export async function archiveAdminPatient(patientId, reason) {
+  const response = await fetch(`${API_BASE_URL}/admin/patients/${encodeURIComponent(patientId)}/archive`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ reason }),
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body?.detail || `Request failed: ${response.status}`);
+  return body;
+}
+
 export async function createAdminDoctorManual(form) {
   const payload = { ...form };
   if (form.license_file) {

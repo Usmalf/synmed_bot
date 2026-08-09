@@ -38,7 +38,12 @@ def _coupon_to_dict(row) -> dict | None:
     if not row:
         return None
     coupon = dict(row)
-    coupon["active"] = bool(coupon.get("active"))
+    configured_active = bool(coupon.get("active"))
+    expires_at = _parse_iso(coupon.get("expires_at"))
+    expired = bool(expires_at and datetime.now(UTC) > expires_at)
+    coupon["configured_active"] = configured_active
+    coupon["expired"] = expired
+    coupon["active"] = configured_active and not expired
     coupon["used_count"] = int(coupon.get("used_count") or 0)
     return coupon
 

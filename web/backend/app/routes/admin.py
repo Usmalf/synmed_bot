@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from ..deps import require_admin
 from ..services.admin_app_service import (
     approve_doctor_application,
+    archive_admin_patient_record,
     clear_attention_payments,
     create_health_tip,
     create_manual_doctor_registration,
@@ -92,6 +93,10 @@ class ManualPatientRegistrationPayload(BaseModel):
     address: str = ""
     allergy: str = ""
     medical_conditions: str = ""
+
+
+class PatientArchivePayload(BaseModel):
+    reason: str = ""
 
 
 class ManualDoctorRegistrationPayload(BaseModel):
@@ -311,8 +316,8 @@ def admin_update_support_ticket(
 
 
 @router.get("/patients")
-def admin_patients(query: str = "", limit: int = 100, session: dict = Depends(require_admin)):
-    return {"patients": list_admin_patients(query, limit)}
+def admin_patients(query: str = "", limit: int = 100, include_archived: bool = False, session: dict = Depends(require_admin)):
+    return {"patients": list_admin_patients(query, limit, include_archived)}
 
 
 @router.post("/patients/manual")
@@ -327,6 +332,21 @@ def admin_create_manual_patient(payload: ManualPatientRegistrationPayload, sessi
         "patient",
         patient["hospital_number"],
         {"email": patient.get("email"), "setup_delivered": result["setup"].get("delivered")},
+    )
+    return result
+
+
+@router.post("/patients/{patient_id}/archive")
+def admin_archive_patient(patient_id: str, payload: PatientArchivePayload, session: dict = Depends(require_admin)):
+    result = archive_admin_patient_record(session["user_id"], patient_id, payload.reason)
+    if not result["archived"]:
+        raise HTTPException(status_code=404, detail=result["message"])
+    record_admin_audit(
+        session["user_id"],
+        "patient_archived",
+        "patient",
+        patient_id,
+        {"reason": payload.reason},
     )
     return result
 

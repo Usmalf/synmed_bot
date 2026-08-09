@@ -78,8 +78,7 @@ export default function AdminLayout() {
           (total, ticket) => total + Number(ticket.unread_patient_messages || 0),
           0,
         );
-        const open = (result.tickets || []).filter((ticket) => ticket.status === "open").length;
-        setTicketLogBadge(unread || open);
+        setTicketLogBadge(unread);
       } catch {}
     }
     loadTicketLogBadge();

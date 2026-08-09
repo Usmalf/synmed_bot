@@ -58,6 +58,9 @@ def _row_to_patient(row):
         "password_hash": row["password_hash"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
+        "archived_at": row["archived_at"],
+        "archived_by_admin_id": row["archived_by_admin_id"],
+        "archived_reason": row["archived_reason"],
     }
 
 
@@ -176,11 +179,15 @@ def get_patient_by_identifier(identifier: str):
         cursor.execute(
             """
             SELECT id, patient_id, telegram_id, name, age, gender, phone, email,
-                   email_verified_at, address, allergy, medical_conditions, password_hash, created_at, updated_at
+                   email_verified_at, address, allergy, medical_conditions, password_hash,
+                   created_at, updated_at, archived_at, archived_by_admin_id, archived_reason
             FROM patients
-            WHERE UPPER(patient_id) = UPPER(?)
-               OR phone = ?
-               OR LOWER(email) = LOWER(?)
+            WHERE (
+                UPPER(patient_id) = UPPER(?)
+                OR phone = ?
+                OR LOWER(email) = LOWER(?)
+            )
+              AND archived_at IS NULL
             """,
             (normalized, normalized, normalized),
         )
@@ -194,9 +201,10 @@ def get_patient_by_telegram_id(telegram_id: int):
         cursor.execute(
             """
             SELECT id, patient_id, telegram_id, name, age, gender, phone, email,
-                   email_verified_at, address, allergy, medical_conditions, password_hash, created_at, updated_at
+                   email_verified_at, address, allergy, medical_conditions, password_hash,
+                   created_at, updated_at, archived_at, archived_by_admin_id, archived_reason
             FROM patients
-            WHERE telegram_id = ?
+            WHERE telegram_id = ? AND archived_at IS NULL
             """,
             (telegram_id,),
         )
@@ -246,7 +254,7 @@ def update_patient_record(identifier: str, field: str, value: str):
 def get_registered_patient_count() -> int:
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) AS total FROM patients")
+        cursor.execute("SELECT COUNT(*) AS total FROM patients WHERE archived_at IS NULL")
         row = cursor.fetchone()
     return row["total"] if row else 0
 
@@ -258,11 +266,15 @@ def search_patient_records(query: str, limit: int = 10):
         cursor.execute(
             """
             SELECT id, patient_id, telegram_id, name, age, gender, phone, email,
-                   email_verified_at, address, allergy, medical_conditions, password_hash, created_at, updated_at
+                   email_verified_at, address, allergy, medical_conditions, password_hash,
+                   created_at, updated_at, archived_at, archived_by_admin_id, archived_reason
             FROM patients
-            WHERE patient_id LIKE ?
-               OR phone LIKE ?
-               OR name LIKE ?
+            WHERE (
+                patient_id LIKE ?
+                OR phone LIKE ?
+                OR name LIKE ?
+            )
+              AND archived_at IS NULL
             ORDER BY id DESC
             LIMIT ?
             """,

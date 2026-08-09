@@ -28,7 +28,7 @@ from services.consultation_records import (
     start_consultation_record,
 )
 from services.consent import record_patient_consent
-from services.coupons import create_coupon, list_coupon_redemptions
+from services.coupons import create_coupon, list_coupon_redemptions, list_coupons
 from services.doctor_earnings import list_doctor_earnings, mark_doctor_earning_paid
 from services.consultation_transfers import create_transfer_request, respond_to_transfer_request
 from services.clinical_documents import create_investigation_document, create_prescription_document
@@ -62,8 +62,11 @@ from web.backend.app.services.auth_service import (
     login_patient,
     send_patient_web_access_setup,
 )
+from web.backend.app.services.admin_app_service import archive_admin_patient_record, list_admin_patients, list_admin_payments
 from web.backend.app.services.doctor_app_service import send_doctor_message
+from web.backend.app.services.patient_app_service import register_web_patient
 from web.backend.app.services.payment_app_service import initialize_web_payment, verify_web_payment
+from web.backend.app.services.payment_app_service import get_current_patient_payment_status
 from web.backend.app.services.whatsapp_service import (
     build_basic_menu,
     build_keyword_reply,
@@ -480,29 +483,66 @@ class TestPersistenceStores(unittest.TestCase):
         self.assertEqual(len(redemptions), 1)
         self.assertEqual(redemptions[0]["discount_amount"], 3000)
 
-    def test_whatsapp_registration_coupon_completes_without_paystack(self):
-        self._record_whatsapp_consent()
-        create_coupon(
-            {
-                "code": "WAFREE100",
-                "applies_to": "registration",
-                "discount_type": "free",
-                "discount_value": 100,
-                "max_uses": 5,
-                "per_user_limit": 1,
-            },
-            admin_id="1",
+    def test_web_free_signup_sends_email_verification(self):
+        with patch(
+            "web.backend.app.services.patient_app_service.send_patient_email_verification",
+            return_value={"delivered": True, "channel": "email"},
+        ) as mocked_send:
+            result = register_web_patient(
+                {
+                    "name": "Free Signup Patient",
+                    "age": 29,
+                    "gender": "Female",
+                    "phone": "08031111111",
+                    "email": "free.signup@example.com",
+                    "address": "Lagos",
+                    "allergy": "",
+                    "medical_conditions": "",
+                    "password": "StrongPass123!",
+                }
+            )
+
+        patient = get_patient_by_identifier("free.signup@example.com")
+
+        self.assertTrue(result["created"])
+        self.assertEqual(patient["name"], "Free Signup Patient")
+        mocked_send.assert_called_once_with(
+            hospital_number=patient["hospital_number"],
+            email="free.signup@example.com",
         )
+
+    def test_first_consultation_is_granted_free_once(self):
+        patient = register_patient(
+            telegram_id=None,
+            name="First Free Patient",
+            age="40",
+            gender="Male",
+            phone="08032222222",
+            email="first.free@example.com",
+            address="Lagos",
+            allergy="",
+            email_verified_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+        first = get_current_patient_payment_status(patient["hospital_number"])
+        second = get_current_patient_payment_status(patient["hospital_number"])
+
+        self.assertTrue(first["active"])
+        self.assertEqual(first["payment"]["amount"], 0)
+        self.assertEqual(first["payment"]["access_source"], "first_consultation_free")
+        self.assertEqual(first["payment"]["reference"], second["payment"]["reference"])
+
+    def test_whatsapp_registration_completes_without_payment(self):
+        self._record_whatsapp_consent()
         now = datetime.now(timezone.utc).isoformat()
         payload = {
             "phone": "08107840312",
             "whatsapp_id": "2348107840312",
-            "name": "WhatsApp Coupon Patient",
+            "name": "WhatsApp Free Patient",
             "age": 31,
             "gender": "Male",
-            "email": "wa.coupon@example.com",
+            "email": "wa.free@example.com",
             "address": "Abuja",
-            "allergy": "",
             "medical_conditions": "",
         }
         with get_connection() as conn:
@@ -514,8 +554,8 @@ class TestPersistenceStores(unittest.TestCase):
                 """,
                 (
                     "2348107840312",
-                    "WhatsApp Coupon Patient",
-                    "register_coupon",
+                    "WhatsApp Free Patient",
+                    "register_allergy",
                     json.dumps(payload),
                     now,
                     now,
@@ -527,16 +567,30 @@ class TestPersistenceStores(unittest.TestCase):
             "web.backend.app.services.whatsapp_service.send_patient_web_access_setup",
             return_value={"delivered": True, "channel": "email"},
         ):
-            reply = asyncio.run(build_whatsapp_reply("WAFREE100", name="WhatsApp Coupon Patient", sender="2348107840312"))
+            reply = asyncio.run(build_whatsapp_reply("none", name="WhatsApp Free Patient", sender="2348107840312"))
 
-        patient = get_patient_by_identifier("wa.coupon@example.com")
-        redemptions = list_coupon_redemptions("WAFREE100")
+        patient = get_patient_by_identifier("wa.free@example.com")
 
-        self.assertIn("Payment verified", reply)
-        self.assertIn("describe your symptoms", reply)
-        self.assertEqual(patient["name"], "WhatsApp Coupon Patient")
-        self.assertEqual(len(redemptions), 1)
-        self.assertEqual(redemptions[0]["amount_after"], 0)
+        self.assertIn("Registration completed", reply)
+        self.assertIn("Reply 2", reply)
+        self.assertEqual(patient["name"], "WhatsApp Free Patient")
+
+    def test_expired_coupon_is_not_reported_active(self):
+        create_coupon(
+            {
+                "code": "OLDCOUPON",
+                "applies_to": "both",
+                "discount_type": "percent",
+                "discount_value": 50,
+                "expires_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+            },
+            admin_id="1",
+        )
+
+        coupon = next(item for item in list_coupons() if item["code"] == "OLDCOUPON")
+
+        self.assertTrue(coupon["expired"])
+        self.assertFalse(coupon["active"])
 
     def test_whatsapp_wrong_registration_response_keeps_step_and_start_resets(self):
         self._record_whatsapp_consent()
@@ -1073,6 +1127,27 @@ class TestPersistenceStores(unittest.TestCase):
         updated = update_patient_record("SM0002", "address", "Lekki")
         self.assertEqual(updated["address"], "Lekki")
         self.assertEqual(get_patient_by_identifier("08010000002")["hospital_number"], "SM0002")
+
+    def test_admin_archive_patient_hides_record_from_operational_views(self):
+        patient = register_patient(
+            telegram_id=4101,
+            name="Archive Me",
+            age="33",
+            gender="Female",
+            phone="08019990000",
+            email="archive@example.com",
+            address="Ikeja",
+            allergy="None",
+        )
+
+        result = archive_admin_patient_record(1, patient["hospital_number"], "Duplicate test record")
+        patients = list_admin_patients("")
+        payment_attention = list_admin_payments()["payments"]
+
+        self.assertTrue(result["archived"])
+        self.assertIsNone(get_patient_by_identifier(patient["hospital_number"]))
+        self.assertFalse(any(row["patient_id"] == patient["hospital_number"] for row in patients))
+        self.assertFalse(any(row.get("patient_id") == patient["hospital_number"] and row["status"] == "no_payment" for row in payment_attention))
 
     def test_consultation_export_contains_biodata_and_transcript(self):
         patient = register_patient(

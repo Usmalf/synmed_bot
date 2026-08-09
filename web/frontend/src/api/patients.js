@@ -19,7 +19,8 @@ export async function registerPatient(payload) {
   );
 
   if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.detail || `Request failed: ${response.status}`);
   }
 
   return response.json();

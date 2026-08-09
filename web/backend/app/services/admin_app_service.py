@@ -240,6 +240,7 @@ def get_admin_alerts(admin_id: int | None = None) -> dict:
         payment
         for payment in payment_records
         if payment.get("status") not in {"verified", "no_payment"}
+        and not payment.get("patient_archived_at")
     ]
     patients_without_payment = [
         payment for payment in payment_records if payment.get("status") == "no_payment"
@@ -543,7 +544,7 @@ def get_admin_summary() -> dict:
     }
 
 
-def list_admin_patients(query: str = "", limit: int = 100) -> list[dict]:
+def list_admin_patients(query: str = "", limit: int = 100, include_archived: bool = False) -> list[dict]:
     normalized = f"%{(query or '').strip()}%"
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -552,20 +553,24 @@ def list_admin_patients(query: str = "", limit: int = 100) -> list[dict]:
             SELECT
                 p.id, p.patient_id, p.telegram_id, p.name, p.age, p.gender,
                 p.phone, p.email, p.email_verified_at, p.created_at,
+                p.archived_at, p.archived_by_admin_id, p.archived_reason,
                 COUNT(c.id) AS consultation_count,
                 MAX(c.created_at) AS last_consultation_at
             FROM patients p
             LEFT JOIN consultations c ON c.patient_id = p.patient_id
-            WHERE ? = '%%'
-               OR p.patient_id LIKE ?
-               OR COALESCE(p.name, '') LIKE ?
-               OR COALESCE(p.email, '') LIKE ?
-               OR COALESCE(p.phone, '') LIKE ?
+            WHERE (? = 1 OR p.archived_at IS NULL)
+              AND (
+                ? = '%%'
+                OR p.patient_id LIKE ?
+                OR COALESCE(p.name, '') LIKE ?
+                OR COALESCE(p.email, '') LIKE ?
+                OR COALESCE(p.phone, '') LIKE ?
+              )
             GROUP BY p.id
-            ORDER BY p.created_at DESC
+            ORDER BY COALESCE(p.archived_at, '') ASC, p.created_at DESC
             LIMIT ?
             """,
-            (normalized, normalized, normalized, normalized, normalized, max(1, min(limit, 250))),
+            (1 if include_archived else 0, normalized, normalized, normalized, normalized, normalized, max(1, min(limit, 250))),
         )
         rows = cursor.fetchall()
     return [dict(row) for row in rows]
@@ -601,7 +606,7 @@ def get_admin_patient_detail(patient_id: str) -> dict | None:
             """
             SELECT id, patient_id, telegram_id, name, age, gender, phone, email,
                    email_verified_at, address, allergy, medical_conditions,
-                   created_at, updated_at
+                   created_at, updated_at, archived_at, archived_by_admin_id, archived_reason
             FROM patients
             WHERE UPPER(patient_id) = UPPER(?)
             """,
@@ -653,6 +658,41 @@ def get_admin_patient_detail(patient_id: str) -> dict | None:
         documents.sort(key=lambda item: item["created_at"] or "", reverse=True)
 
     return {"patient": dict(patient), "documents": documents}
+
+
+def archive_admin_patient_record(admin_id: int, patient_id: str, reason: str = "") -> dict:
+    normalized_patient_id = (patient_id or "").strip()
+    if not normalized_patient_id:
+        return {"archived": False, "message": "Patient record was not selected.", "patient": None}
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, patient_id, name, archived_at
+            FROM patients
+            WHERE UPPER(patient_id) = UPPER(?)
+            """,
+            (normalized_patient_id,),
+        )
+        patient = cursor.fetchone()
+        if not patient:
+            return {"archived": False, "message": "Patient record could not be found.", "patient": None}
+        if patient["archived_at"]:
+            return {"archived": True, "message": "Patient record is already archived.", "patient": dict(patient)}
+        cursor.execute(
+            """
+            UPDATE patients
+            SET archived_at = ?, archived_by_admin_id = ?, archived_reason = ?, updated_at = ?
+            WHERE UPPER(patient_id) = UPPER(?)
+            """,
+            (_now_iso(), admin_id, (reason or "").strip(), _now_iso(), normalized_patient_id),
+        )
+        conn.commit()
+    return {
+        "archived": True,
+        "message": "Patient record archived. Clinical, payment, and audit history were preserved.",
+        "patient": {"patient_id": normalized_patient_id, "name": patient["name"]},
+    }
 
 
 def send_admin_patient_document(
@@ -727,7 +767,8 @@ def list_admin_payments() -> dict:
                 pay.patient_type, pay.label, pay.status, pay.paystack_status,
                 pay.created_at, pay.verified_at, pay.access_expires_at,
                 pay.grant_reason, pay.granted_by_admin_id,
-                COALESCE(p.name, 'Unlinked patient') AS patient_name
+                COALESCE(p.name, 'Unlinked patient') AS patient_name,
+                p.archived_at AS patient_archived_at
             FROM payments pay
             LEFT JOIN patients p ON UPPER(p.patient_id) = UPPER(COALESCE(pay.patient_id, ''))
             ORDER BY datetime(pay.created_at) DESC, pay.id DESC
@@ -738,7 +779,8 @@ def list_admin_payments() -> dict:
             """
             SELECT p.patient_id, p.name, p.email, p.created_at
             FROM patients p
-            WHERE NOT EXISTS (
+            WHERE p.archived_at IS NULL
+              AND NOT EXISTS (
                 SELECT 1 FROM payments pay
                 WHERE UPPER(COALESCE(pay.patient_id, '')) = UPPER(p.patient_id)
             )
@@ -755,7 +797,13 @@ def list_admin_payments() -> dict:
     for row in payment_rows:
         record = dict(row)
         record["access_active"] = row["status"] == "verified" and is_payment_within_validity_window(row)
-        record["source"] = "admin_grant" if row["paystack_status"] == "admin_access_grant" else "paystack"
+        record["source"] = (
+            "admin_grant"
+            if row["paystack_status"] == "admin_access_grant"
+            else "first_consultation_free"
+            if row["paystack_status"] == "first_consultation_free"
+            else "paystack"
+        )
         payments.append(record)
 
     no_payment = [
@@ -775,6 +823,7 @@ def list_admin_payments() -> dict:
             "access_expires_at": None,
             "grant_reason": "",
             "granted_by_admin_id": None,
+            "patient_archived_at": None,
             "access_active": False,
             "source": "none",
         }
@@ -856,7 +905,8 @@ def clear_attention_payments(*, actor_role: str = "admin", actor_id: str = "") -
             INSERT INTO dismissed_payment_attention (patient_id, dismissed_by_role, dismissed_by_id, dismissed_at)
             SELECT p.patient_id, ?, ?, ?
             FROM patients p
-            WHERE NOT EXISTS (
+            WHERE p.archived_at IS NULL
+              AND NOT EXISTS (
                 SELECT 1 FROM payments pay
                 WHERE UPPER(COALESCE(pay.patient_id, '')) = UPPER(p.patient_id)
             )

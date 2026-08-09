@@ -17,13 +17,14 @@ class PatientRegistrationRequest(BaseModel):
     medical_conditions: str = ""
     email: EmailStr | None = None
     password: str
-    signup_otp_code: str
 
 
 class PatientRegistrationResponse(BaseModel):
     created: bool
     message: str
     patient: dict | None = None
+    requires_email_verification: bool = False
+    verification_delivery: str | None = None
 
 
 class PatientHistoryResponse(BaseModel):

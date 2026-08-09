@@ -1,7 +1,9 @@
 import asyncio
 import os
 import json
+from datetime import datetime, timedelta, timezone
 
+from database import get_connection
 from services.paystack import (
     PaystackError,
     build_backend_callback_url,
@@ -34,6 +36,8 @@ RETURNING_PATIENT_LABEL = os.getenv(
     "RETURNING_PATIENT_PAYMENT_LABEL",
     "SynMed Consultation Fee",
 )
+UTC = timezone.utc
+FIRST_CONSULTATION_FREE_HOURS = int(os.getenv("FIRST_CONSULTATION_FREE_HOURS", "24") or "24")
 
 
 def get_payment_config() -> dict:
@@ -43,6 +47,74 @@ def get_payment_config() -> dict:
         "registration_coupons_available": has_active_coupon_for_purpose("registration"),
         "consultation_coupons_available": has_active_coupon_for_purpose("consultation"),
     }
+
+
+def _has_used_first_consultation_free(patient_id: str) -> bool:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT 1
+            FROM payments
+            WHERE UPPER(COALESCE(patient_id, '')) = UPPER(?)
+              AND paystack_status = 'first_consultation_free'
+            LIMIT 1
+            """,
+            (patient_id,),
+        )
+        return cursor.fetchone() is not None
+
+
+def _has_any_consultation_record(patient_id: str) -> bool:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT 1
+            FROM consultations
+            WHERE UPPER(COALESCE(patient_id, '')) = UPPER(?)
+            LIMIT 1
+            """,
+            (patient_id,),
+        )
+        return cursor.fetchone() is not None
+
+
+def _grant_first_consultation_free(patient: dict, payment_config: dict) -> dict | None:
+    patient_id = patient["hospital_number"]
+    if _has_used_first_consultation_free(patient_id) or _has_any_consultation_record(patient_id):
+        return None
+    reference = create_payment_reference(prefix="free")
+    create_payment_record(
+        reference=reference,
+        telegram_id=int(patient.get("telegram_id") or 0),
+        patient_id=patient_id,
+        email=patient.get("email") or "",
+        amount=0,
+        currency=payment_config["currency"],
+        patient_type="returning",
+        label="SynMed First Consultation",
+        original_amount=payment_config["returning_patient_fee"],
+        discount_amount=payment_config["returning_patient_fee"],
+    )
+    token = mark_payment_verified(
+        reference,
+        paystack_status="first_consultation_free",
+        patient_id=patient_id,
+    )
+    expires_at = datetime.now(UTC) + timedelta(hours=max(1, min(FIRST_CONSULTATION_FREE_HOURS, 168)))
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE payments
+            SET access_expires_at = ?, grant_reason = ?
+            WHERE reference = ?
+            """,
+            (expires_at.isoformat(), "First consultation free", reference),
+        )
+        conn.commit()
+    return get_payment_by_reference(reference)
 
 
 def get_current_patient_payment_status(patient_identifier: str) -> dict:
@@ -56,6 +128,8 @@ def get_current_patient_payment_status(patient_identifier: str) -> dict:
 
     payment = get_latest_valid_payment_for_patient(patient["hospital_number"])
     if not payment:
+        payment = _grant_first_consultation_free(patient, get_payment_config())
+    if not payment:
         return {
             "active": False,
             "message": "No active 24-hour consultation payment was found. Start a new payment to continue.",
@@ -64,10 +138,12 @@ def get_current_patient_payment_status(patient_identifier: str) -> dict:
 
     return {
         "active": True,
-        "message": (
-            "Admin has granted temporary consultation access."
-            if payment["paystack_status"] == "admin_access_grant"
-            else "A valid payment is still active for this patient within the 24-hour access window."
+        "message": {
+            "admin_access_grant": "Admin has granted temporary consultation access.",
+            "first_consultation_free": "Your first SynMed consultation is free. You can continue to symptoms and consultation.",
+        }.get(
+            payment["paystack_status"],
+            "A valid payment is still active for this patient within the 24-hour access window.",
         ),
         "payment": {
             "reference": payment["reference"],
@@ -80,6 +156,8 @@ def get_current_patient_payment_status(patient_identifier: str) -> dict:
             "access_source": (
                 "admin_grant"
                 if payment["paystack_status"] == "admin_access_grant"
+                else "first_consultation_free"
+                if payment["paystack_status"] == "first_consultation_free"
                 else "payment"
             ),
             "access_expires_at": payment["access_expires_at"],

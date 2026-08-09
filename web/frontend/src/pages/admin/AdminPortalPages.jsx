@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import StatusPill from "../../components/StatusPill.jsx";
 import {
   approveDoctorApplication,
+  archiveAdminPatient,
   assignAdminMedicalReportRequest,
   clearAdminPaymentAttention,
   createAdminDoctorManual,
@@ -675,6 +676,7 @@ export function AdminPatientsPage() {
   const [doctors, setDoctors] = useState([]);
   const [sendForm, setSendForm] = useState(null);
   const [manualPatientForm, setManualPatientForm] = useState(null);
+  const [archiveDialog, setArchiveDialog] = useState(null);
   const [busy, setBusy] = useState(false);
 
   async function load(search = query) {
@@ -771,6 +773,36 @@ export function AdminPatientsPage() {
     }
   }
 
+  function requestArchivePatient(patient) {
+    setArchiveDialog({
+      patient,
+      title: "Archive patient record",
+      message: `Archive ${patient.name || "this patient"} (${patient.patient_id})? This hides the account from normal operations but preserves clinical, payment, and audit history.`,
+      confirmLabel: "Archive patient",
+      danger: true,
+      requiresReason: true,
+      reason: "",
+      setReason: (reason) => setArchiveDialog((current) => ({ ...current, reason })),
+    });
+  }
+
+  async function confirmArchivePatient() {
+    if (!archiveDialog?.patient) return;
+    setBusy(true);
+    try {
+      const result = await archiveAdminPatient(archiveDialog.patient.patient_id, archiveDialog.reason || "");
+      setArchiveDialog(null);
+      closePatient();
+      await load(query);
+      setState((current) => ({ ...current, status: "success", message: result.message || "Patient record archived." }));
+      window.dispatchEvent(new Event("synmed:admin-notifications-updated"));
+    } catch (error) {
+      setState((current) => ({ ...current, status: "error", message: error.message || "Unable to archive patient record." }));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const visible = state.patients.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   return (
     <>
@@ -845,7 +877,12 @@ export function AdminPatientsPage() {
                 <h2 id="patient-record-title">{detailState.detail.patient.name}</h2>
                 <p>{detailState.detail.patient.patient_id}</p>
               </div>
-              <button type="button" onClick={closePatient} aria-label="Close patient biodata">Close</button>
+              <div className="admin-row-actions">
+                {!detailState.detail.patient.archived_at ? (
+                  <button type="button" onClick={() => requestArchivePatient(detailState.detail.patient)}>Archive</button>
+                ) : null}
+                <button type="button" onClick={closePatient} aria-label="Close patient biodata">Close</button>
+              </div>
             </header>
             <Notice state={detailState} />
             <div className="admin-biodata-grid">
@@ -858,6 +895,8 @@ export function AdminPatientsPage() {
                 ["Allergies", detailState.detail.patient.allergy || "None recorded"],
                 ["Medical conditions", detailState.detail.patient.medical_conditions || "None recorded"],
                 ["Email status", detailState.detail.patient.email_verified_at ? "Verified" : "Not verified"],
+                ["Archive status", detailState.detail.patient.archived_at ? `Archived: ${formatDate(detailState.detail.patient.archived_at)}` : "Active"],
+                ["Archive reason", detailState.detail.patient.archived_reason || "N/A"],
               ].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value || "Not recorded"}</strong></div>)}
             </div>
             <div className="admin-record-card__documents">
@@ -895,6 +934,7 @@ export function AdminPatientsPage() {
           </section>
         </div>
       ) : null}
+      <ConfirmDialog dialog={archiveDialog} busy={busy} onCancel={() => setArchiveDialog(null)} onConfirm={confirmArchivePatient} />
     </>
   );
 }
@@ -2365,8 +2405,8 @@ export function AdminSettingsPage() {
                     <td>{formatAction(coupon.applies_to)}</td>
                     <td>{coupon.discount_type === "free" ? "Free" : coupon.discount_type === "percent" ? `${coupon.discount_value}%` : `${state.settings?.payments?.currency || "NGN"} ${Number(coupon.discount_value || 0).toLocaleString()}`}</td>
                     <td>{coupon.used_count || 0}{coupon.max_uses ? ` / ${coupon.max_uses}` : ""}</td>
-                    <td><StatusPill label={coupon.active ? "Active" : "Inactive"} tone={coupon.active ? "success" : "neutral"} /></td>
-                    <td><button type="button" disabled={busy} onClick={() => toggleCoupon(coupon)}>{coupon.active ? "Deactivate" : "Activate"}</button></td>
+                    <td><StatusPill label={coupon.expired ? "Expired" : coupon.active ? "Active" : "Inactive"} tone={coupon.expired ? "warning" : coupon.active ? "success" : "neutral"} /></td>
+                    <td><button type="button" disabled={busy || coupon.expired} onClick={() => toggleCoupon(coupon)}>{coupon.active ? "Deactivate" : "Activate"}</button></td>
                   </tr>
                 ))}
                 {!state.settings?.coupons?.coupons?.length ? (

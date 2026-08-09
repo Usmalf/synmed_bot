@@ -686,6 +686,71 @@ def _consultation_payment_config(patient_type: str) -> dict:
     }
 
 
+def _has_used_whatsapp_first_consultation_free(patient_id: str) -> bool:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT 1
+            FROM payments
+            WHERE UPPER(COALESCE(patient_id, '')) = UPPER(?)
+              AND paystack_status = 'first_consultation_free'
+            LIMIT 1
+            """,
+            (patient_id,),
+        )
+        return cursor.fetchone() is not None
+
+
+def _has_whatsapp_consultation_record(patient_id: str) -> bool:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT 1
+            FROM consultations
+            WHERE UPPER(COALESCE(patient_id, '')) = UPPER(?)
+            LIMIT 1
+            """,
+            (patient_id,),
+        )
+        return cursor.fetchone() is not None
+
+
+def _grant_whatsapp_first_consultation_free(patient: dict) -> dict | None:
+    patient_id = patient["hospital_number"]
+    if _has_used_whatsapp_first_consultation_free(patient_id) or _has_whatsapp_consultation_record(patient_id):
+        return None
+    settings = get_payment_settings()
+    reference = create_payment_reference(prefix="free")
+    create_payment_record(
+        reference=reference,
+        telegram_id=int(patient.get("telegram_id") or 0),
+        patient_id=patient_id,
+        email=patient.get("email") or f"{patient_id.lower()}@synmed.patient",
+        amount=0,
+        currency=settings["currency"],
+        patient_type="returning",
+        label="SynMed First Consultation",
+        original_amount=settings["returning_patient_fee"],
+        discount_amount=settings["returning_patient_fee"],
+    )
+    mark_payment_verified(reference, paystack_status="first_consultation_free", patient_id=patient_id)
+    expires_at = datetime.now(UTC) + timedelta(hours=24)
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE payments
+            SET access_expires_at = ?, grant_reason = ?
+            WHERE reference = ?
+            """,
+            (expires_at.isoformat(), "First consultation free", reference),
+        )
+        conn.commit()
+    return get_payment_by_reference(reference)
+
+
 def _coupon_prompt(purpose: str) -> str:
     label = "registration" if purpose == "registration" else "consultation"
     return (
@@ -887,52 +952,29 @@ async def _continue_registration(session: dict, text: str) -> str:
     if state == "register_allergy":
         payload["allergy"] = "" if value.lower() in {"none", "nil", "no"} else value
         payload.setdefault("medical_conditions", "")
-        if has_active_coupon_for_purpose("registration"):
-            _save_session(whatsapp_id, "register_coupon", payload, session.get("name", ""))
-            return _coupon_prompt("registration")
         try:
-            payment = await _initialize_whatsapp_payment(
-                patient_type="new",
+            patient = register_patient(
+                telegram_id=None,
+                name=payload["name"],
+                age=str(payload["age"]),
+                gender=payload["gender"],
+                phone=payload["phone"],
                 email=payload["email"],
-                whatsapp_id=whatsapp_id,
-                registration=payload,
+                address=payload["address"],
+                allergy=payload.get("allergy", ""),
+                medical_conditions=payload.get("medical_conditions", ""),
+                email_verified_at=None,
             )
-        except PaystackError as exc:
-            return f"Unable to start payment right now: {exc}"
         except Exception:
-            return "Unable to start payment right now. Please try again shortly."
-        payload["payment_reference"] = payment["reference"]
-        if not payment.get("authorization_url"):
-            _save_session(whatsapp_id, "awaiting_payment", payload, session.get("name", ""))
-            return await _verify_whatsapp_payment(payment["reference"], whatsapp_id, session.get("name", ""))
-        _save_session(whatsapp_id, "awaiting_payment", payload, session.get("name", ""))
-        return (
-            "Your registration details have been saved pending payment.\n\n"
-            f"{_payment_prompt(payment)}"
-        )
-
-    if state == "register_coupon":
-        coupon_code = "" if _is_coupon_skip(value) else value
+            return "Unable to complete registration right now. Please try again shortly."
         try:
-            payment = await _initialize_whatsapp_payment(
-                patient_type="new",
-                email=payload["email"],
-                whatsapp_id=whatsapp_id,
-                registration=payload,
-                coupon_code=coupon_code,
-            )
-        except PaystackError as exc:
-            return f"Unable to start payment right now: {exc}"
+            send_patient_web_access_setup(hospital_number=patient["hospital_number"], email=patient["email"])
         except Exception:
-            return "Unable to start payment right now. Please try again shortly."
-        payload["payment_reference"] = payment["reference"]
-        if not payment.get("authorization_url"):
-            _save_session(whatsapp_id, "awaiting_payment", payload, session.get("name", ""))
-            return await _verify_whatsapp_payment(payment["reference"], whatsapp_id, session.get("name", ""))
-        _save_session(whatsapp_id, "awaiting_payment", payload, session.get("name", ""))
+            pass
+        _save_session(whatsapp_id, "idle", {"patient_id": patient["hospital_number"]}, session.get("name", ""))
         return (
-            "Your registration details have been saved pending payment.\n\n"
-            f"{_payment_prompt(payment)}"
+            f"Registration completed for {patient['name']} ({patient['hospital_number']}).\n\n"
+            "We have sent your web access setup link to your email. Reply 2 whenever you want to start your first consultation."
         )
 
     return build_basic_menu(session.get("name", ""))
@@ -1057,8 +1099,15 @@ async def _start_consultation_reply(whatsapp_id: str, name: str = "") -> str:
     if not patient:
         return _start_registration_reply(whatsapp_id, name)
     payment = get_latest_valid_payment_for_patient(patient["hospital_number"])
+    if not payment:
+        payment = _grant_whatsapp_first_consultation_free(patient)
     if payment:
         _save_session(whatsapp_id, "awaiting_symptoms", {"patient_id": patient["hospital_number"], "reference": payment["reference"]}, name)
+        if payment["paystack_status"] == "first_consultation_free":
+            return (
+                f"Your first SynMed consultation is free for {patient['name']} ({patient['hospital_number']}).\n\n"
+                "Please describe your symptoms so I can place you in the doctor queue."
+            )
         return (
             f"I found an active consultation payment for {patient['name']} ({patient['hospital_number']}).\n\n"
             "Please describe your symptoms so I can place you in the doctor queue."
