@@ -94,7 +94,7 @@ def list_message_doctors() -> list[dict]:
             SELECT telegram_id, name, specialty
             FROM doctor_profiles
             WHERE verified = 1
-            ORDER BY name COLLATE NOCASE
+            ORDER BY LOWER(COALESCE(name, ''))
             """
         )
         rows = cursor.fetchall()
@@ -108,7 +108,7 @@ def list_message_admins() -> list[dict]:
             """
             SELECT admin_id, display_name, email
             FROM admin_accounts
-            ORDER BY display_name COLLATE NOCASE, admin_id
+            ORDER BY LOWER(COALESCE(display_name, '')), admin_id
             """
         )
         rows = cursor.fetchall()
@@ -123,7 +123,7 @@ def list_message_customer_care_accounts() -> list[dict]:
             SELECT account_id, display_name, email
             FROM customer_care_accounts
             WHERE status = 'active'
-            ORDER BY display_name COLLATE NOCASE, account_id
+            ORDER BY LOWER(COALESCE(display_name, '')), account_id
             """
         )
         rows = cursor.fetchall()

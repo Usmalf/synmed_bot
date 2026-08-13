@@ -162,7 +162,7 @@ def list_doctor_earnings() -> dict:
             LEFT JOIN doctor_earnings de ON de.doctor_id = CAST(dp.telegram_id AS TEXT)
             WHERE COALESCE(dp.verified, 0) = 1
             GROUP BY dp.telegram_id, dp.name, d.telegram_id, d.name, pref.payout_preference
-            ORDER BY doctor_name COLLATE NOCASE
+            ORDER BY LOWER(COALESCE(dp.name, d.name, 'Doctor'))
             """,
             (DEFAULT_PAYOUT_PREFERENCE,),
         )

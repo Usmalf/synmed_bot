@@ -824,7 +824,7 @@ def list_customer_care_accounts() -> list[dict]:
             SELECT account_id, email, display_name, status, created_by_admin_id,
                    created_at, updated_at, last_login_at
             FROM customer_care_accounts
-            ORDER BY display_name COLLATE NOCASE ASC, account_id ASC
+            ORDER BY LOWER(COALESCE(display_name, '')) ASC, account_id ASC
             """
         )
         return [dict(row) for row in cursor.fetchall()]

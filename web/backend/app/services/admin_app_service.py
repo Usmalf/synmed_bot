@@ -381,7 +381,7 @@ def _fetch_verified_doctors() -> list[dict]:
             INNER JOIN doctor_profiles dp ON dp.telegram_id = d.telegram_id
             LEFT JOIN doctor_runtime_presence drp ON drp.doctor_id = d.telegram_id
             WHERE d.status = 'verified' AND dp.verified = 1
-            ORDER BY dp.name COLLATE NOCASE ASC, d.telegram_id ASC
+            ORDER BY LOWER(COALESCE(dp.name, '')) ASC, d.telegram_id ASC
             """
         )
         rows = cursor.fetchall()
@@ -435,7 +435,7 @@ def _fetch_suspended_doctors() -> list[dict]:
             LEFT JOIN doctors d ON d.telegram_id = dp.telegram_id
             WHERE COALESCE(dp.verified, 0) = 0
               AND COALESCE(d.status, '') = 'suspended'
-            ORDER BY dp.name COLLATE NOCASE ASC, dp.telegram_id ASC
+            ORDER BY LOWER(COALESCE(dp.name, '')) ASC, dp.telegram_id ASC
             """
         )
         rows = cursor.fetchall()
@@ -499,7 +499,7 @@ def _customer_care_account_summary() -> dict:
                     WHEN 'rejected' THEN 3
                     ELSE 4
                 END,
-                display_name COLLATE NOCASE ASC
+                LOWER(COALESCE(display_name, '')) ASC
             LIMIT 20
             """
         )
@@ -590,7 +590,7 @@ def search_admin_records(query: str, limit: int = 12) -> dict:
             FROM doctor_profiles
             WHERE name LIKE ? OR specialty LIKE ? OR email LIKE ?
                OR license_id LIKE ? OR CAST(telegram_id AS TEXT) LIKE ?
-            ORDER BY name COLLATE NOCASE
+            ORDER BY LOWER(COALESCE(name, ''))
             LIMIT ?
             """,
             (pattern, pattern, pattern, pattern, pattern, max(1, min(limit, 50))),
@@ -1000,7 +1000,7 @@ def get_admin_ratings() -> dict:
             LEFT JOIN doctor_profiles dp ON dp.telegram_id = dr.doctor_id
             LEFT JOIN doctors d ON d.telegram_id = dr.doctor_id
             GROUP BY dr.doctor_id
-            ORDER BY average_rating DESC, rating_count DESC, doctor_name COLLATE NOCASE
+            ORDER BY average_rating DESC, rating_count DESC, LOWER(COALESCE(dp.name, d.name, 'Doctor'))
             """
         )
         doctor_summary_rows = cursor.fetchall()
