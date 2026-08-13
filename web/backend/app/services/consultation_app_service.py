@@ -21,6 +21,7 @@ from services.paystack import (
     is_payment_within_validity_window,
 )
 from services.patient_records import get_patient_by_identifier
+from services.queue_notifications import dispatch_admins_patient_queued
 from .chat_realtime_service import realtime_hub
 from synmed_utils.active_chats import (
     end_chat,
@@ -277,6 +278,8 @@ async def submit_consultation_request(reference: str, symptoms: str) -> dict:
             "emergency": emergency,
             "call": None,
         }
+
+    dispatch_admins_patient_queued(queued_details or patient_details, channel="web")
 
     return {
         "submitted": True,

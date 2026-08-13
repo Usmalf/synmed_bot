@@ -52,6 +52,7 @@ from services.paystack import (
     process_paystack_webhook,
     verify_paystack_webhook_signature,
 )
+from services.queue_notifications import consultation_queue_alert_text
 from synmed_utils.doctor_profiles import create_or_update_profile, doctor_profiles
 from synmed_utils.active_chats import active_chats, clear_runtime_state, last_consultation, start_chat
 import synmed_utils.doctor_registry as doctor_registry
@@ -101,6 +102,25 @@ class TestPersistenceStores(unittest.TestCase):
 
     def _record_whatsapp_consent(self, whatsapp_id: str = "2348107840312"):
         record_patient_consent(int(whatsapp_id), channel="whatsapp")
+
+    def test_consultation_queue_alert_text_includes_patient_details(self):
+        text = consultation_queue_alert_text(
+            {
+                "hospital_number": "SM0001",
+                "name": "Queue Patient",
+                "age": "34",
+                "gender": "Female",
+                "phone": "08030000000",
+                "history": "Headache and fever for two days",
+                "submitted_at": "2026-08-13T10:00:00+00:00",
+            },
+            channel="web",
+        )
+
+        self.assertIn("New patient awaiting consultation", text)
+        self.assertIn("SM0001", text)
+        self.assertIn("Queue Patient", text)
+        self.assertIn("Headache and fever", text)
 
     def test_postgres_sql_conversion_escapes_literal_percent(self):
         cursor = PostgresCursor(None, None)

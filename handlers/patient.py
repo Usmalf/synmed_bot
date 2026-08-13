@@ -27,6 +27,7 @@ from services.paystack import (
     mark_payment_verified,
     verify_transaction,
 )
+from services.queue_notifications import dispatch_admins_patient_queued
 from services.followups import confirm_follow_up_booking, get_follow_up_by_reference, schedule_follow_up
 from services.consent import CONSENT_SUMMARY, consent_keyboard, has_patient_consented
 from synmed_utils.active_chats import end_chat, is_in_chat, restore_runtime_state, start_chat
@@ -1219,6 +1220,7 @@ async def _complete_consultation_request(update: Update, context: ContextTypes.D
         )
     else:
         registry.queue_patient(patient_id, patient_details)
+        dispatch_admins_patient_queued(patient_details, channel="telegram", bot=context.bot)
         await update.message.reply_text(
             "No doctor is online. You will be connected shortly."
             if not emergency["is_emergency"]

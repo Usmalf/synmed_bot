@@ -13,6 +13,7 @@ from services.emergency import detect_emergency
 from services.consultation_records import log_consultation_message
 from services.consent import CONSENT_POLICY_TEXT, CONSENT_SUMMARY, has_patient_consented, record_patient_consent
 from services.patient_records import get_patient_by_identifier, register_patient
+from services.queue_notifications import dispatch_admins_patient_queued
 from services.ratings_service import add_rating, add_review, has_rating, has_review
 from services.paystack import (
     PaystackError,
@@ -1237,6 +1238,7 @@ async def _queue_whatsapp_consultation(whatsapp_id: str, symptoms: str, session:
     }
     registry.remove_patient_from_queue(patient_runtime_id)
     registry.queue_patient(patient_runtime_id, patient_details)
+    dispatch_admins_patient_queued(patient_details, channel="whatsapp")
     _save_session(whatsapp_id, "queued", {"patient_id": patient["hospital_number"], "reference": payment["reference"]}, name)
     return (
         "Your symptoms have been submitted and you are now in the doctor queue.\n\n"
