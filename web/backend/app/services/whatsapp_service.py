@@ -328,6 +328,14 @@ def _wrong_step_reply(expected: str) -> str:
     )
 
 
+def _is_yes_reply(value: str) -> bool:
+    return value.strip().lower() in {"yes", "y", "yeah", "yea", "sure", "ok", "okay", "proceed", "continue"}
+
+
+def _is_no_reply(value: str) -> bool:
+    return value.strip().lower() in {"no", "n", "not now", "later", "skip", "no thanks", "no thank you"}
+
+
 def _rating_prompt() -> str:
     return (
         "Your consultation has ended. Thank you for using SynMed Telehealth.\n\n"
@@ -972,13 +980,35 @@ async def _continue_registration(session: dict, text: str) -> str:
             send_patient_web_access_setup(hospital_number=patient["hospital_number"], email=patient["email"])
         except Exception:
             pass
-        _save_session(whatsapp_id, "idle", {"patient_id": patient["hospital_number"]}, session.get("name", ""))
+        _save_session(
+            whatsapp_id,
+            "post_registration_consultation_choice",
+            {"patient_id": patient["hospital_number"]},
+            session.get("name", ""),
+        )
         return (
             f"Registration completed for {patient['name']} ({patient['hospital_number']}).\n\n"
-            "We have sent your web access setup link to your email. Reply 2 whenever you want to start your first consultation."
+            "We have sent your web access setup link to your email for future web sign-in.\n\n"
+            "Would you like to proceed with consultation now? Reply yes to enter your symptoms, or no to return to the menu."
         )
 
     return build_basic_menu(session.get("name", ""))
+
+
+async def _handle_post_registration_consultation_choice(session: dict, message_text: str, name: str = "") -> str:
+    whatsapp_id = session["whatsapp_id"]
+    display_name = name or session.get("name", "")
+    if _is_yes_reply(message_text):
+        return await _start_consultation_reply(whatsapp_id, display_name)
+    if _is_no_reply(message_text):
+        _save_session(
+            whatsapp_id,
+            "idle",
+            {"patient_id": (session.get("payload") or {}).get("patient_id", "")},
+            display_name,
+        )
+        return "No problem. You can reply 2 whenever you are ready to start consultation.\n\n" + build_basic_menu(display_name)
+    return _wrong_step_reply("Please reply yes to proceed with consultation now, or no to return to the menu.")
 
 
 async def _verify_whatsapp_payment(reference: str, whatsapp_id: str, name: str = "") -> str:
@@ -1481,6 +1511,8 @@ async def build_whatsapp_reply(message_text: str, name: str = "", sender: str = 
 
     if normalized in RESTART_WORDS:
         return build_basic_menu(name)
+    if session and session["state"] == "post_registration_consultation_choice":
+        return await _handle_post_registration_consultation_choice(session, message_text, name)
     if session and session["state"].startswith("register_"):
         return await _continue_registration(session, message_text)
     if session and session["state"] == "consultation_coupon":

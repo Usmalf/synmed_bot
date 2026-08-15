@@ -592,8 +592,45 @@ class TestPersistenceStores(unittest.TestCase):
         patient = get_patient_by_identifier("wa.free@example.com")
 
         self.assertIn("Registration completed", reply)
-        self.assertIn("Reply 2", reply)
+        self.assertIn("proceed with consultation now", reply)
         self.assertEqual(patient["name"], "WhatsApp Free Patient")
+
+    def test_whatsapp_post_registration_yes_starts_consultation(self):
+        self._record_whatsapp_consent()
+        patient = register_patient(
+            telegram_id=None,
+            name="WhatsApp Choice Patient",
+            age="31",
+            gender="Male",
+            phone="08107840312",
+            email="wa.choice@example.com",
+            address="Abuja",
+            allergy="",
+            medical_conditions="",
+        )
+        now = datetime.now(timezone.utc).isoformat()
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO whatsapp_sessions (whatsapp_id, name, state, payload_json, updated_at, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "2348107840312",
+                    "WhatsApp Choice Patient",
+                    "post_registration_consultation_choice",
+                    json.dumps({"patient_id": patient["hospital_number"]}),
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+
+        reply = asyncio.run(build_whatsapp_reply("yes", name="WhatsApp Choice Patient", sender="2348107840312"))
+
+        self.assertIn("first SynMed consultation is free", reply)
+        self.assertIn("Please describe your symptoms", reply)
 
     def test_expired_coupon_is_not_reported_active(self):
         create_coupon(
