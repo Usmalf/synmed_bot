@@ -140,8 +140,24 @@ def build_basic_menu(name: str = "") -> str:
     )
 
 
+def build_more_options_menu() -> str:
+    return (
+        "More SynMed options\n\n"
+        "Tap an option below, or reply with:\n"
+        "3 - Payment support\n"
+        "4 - Medical report\n"
+        "5 - Talk to customer care\n"
+        "6 - Continue on web\n"
+        "7 - WhatsApp consultation guide"
+    )
+
+
 def _is_basic_menu_reply(message: str) -> bool:
     return "Welcome to SynMed Telehealth. How can we help you today?" in (message or "")
+
+
+def _is_more_options_reply(message: str) -> bool:
+    return "More SynMed options" in (message or "")
 
 
 def _whatsapp_consent_subject(whatsapp_id: str) -> int:
@@ -172,6 +188,10 @@ def _whatsapp_consent_prompt() -> str:
 
 def _is_consent_prompt(message: str) -> bool:
     return CONSENT_SUMMARY in (message or "")
+
+
+def _is_post_registration_consultation_prompt(message: str) -> bool:
+    return "Would you like to proceed with consultation now?" in (message or "")
 
 
 def _next_action_from_message(normalized: str) -> str:
@@ -1425,6 +1445,8 @@ def build_keyword_reply(message_text: str, name: str = "", sender: str = "") -> 
     )
     if normalized in {"hi", "hello", "hey", "menu", "start"}:
         return build_basic_menu(name)
+    if normalized in {"more_options", "more options", "more"}:
+        return build_more_options_menu()
     if normalized.startswith("setup") or normalized in {"web access", "activate web", "setup link"}:
         patient = _lookup_patient_from_message(message_text, sender)
         if not patient and contains_patient_identifier:
@@ -1623,26 +1645,57 @@ async def send_menu_options_message(to: str, message: str) -> dict:
         raise WhatsAppConfigurationError("WhatsApp access token or phone number ID is not configured.")
 
     url = f"https://graph.facebook.com/{WHATSAPP_API_VERSION}/{phone_number_id}/messages"
-    rows = [
-        {"id": "1", "title": "Register / sign in", "description": "Create or access your SynMed account."},
-        {"id": "2", "title": "Start consultation", "description": "Begin a doctor consultation."},
-        {"id": "3", "title": "Payment support", "description": "Get help with payment or access."},
-        {"id": "4", "title": "Medical report", "description": "Request or ask about a medical report."},
-        {"id": "5", "title": "Customer care", "description": "Send your issue to support."},
-        {"id": "6", "title": "Continue on web", "description": "Open the SynMed website."},
-        {"id": "7", "title": "WhatsApp guide", "description": "See how consultation works here."},
-    ]
     payload = {
         "messaging_product": "whatsapp",
         "recipient_type": "individual",
         "to": to,
         "type": "interactive",
         "interactive": {
-            "type": "list",
+            "type": "button",
             "body": {"text": message},
             "action": {
-                "button": "Choose option",
-                "sections": [{"title": "SynMed options", "rows": rows}],
+                "buttons": [
+                    {"type": "reply", "reply": {"id": "1", "title": "Register / sign in"}},
+                    {"type": "reply", "reply": {"id": "2", "title": "Start consult"}},
+                    {"type": "reply", "reply": {"id": "more_options", "title": "More options"}},
+                ],
+            },
+        },
+    }
+    async with httpx.AsyncClient(timeout=20) as client:
+        response = await client.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+    response.raise_for_status()
+    return response.json()
+
+
+async def send_more_options_message(to: str, message: str) -> dict:
+    token = _access_token()
+    phone_number_id = _phone_number_id()
+    if not token or not phone_number_id:
+        raise WhatsAppConfigurationError("WhatsApp access token or phone number ID is not configured.")
+
+    url = f"https://graph.facebook.com/{WHATSAPP_API_VERSION}/{phone_number_id}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to,
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {"text": message},
+            "action": {
+                "buttons": [
+                    {"type": "reply", "reply": {"id": "3", "title": "Payment support"}},
+                    {"type": "reply", "reply": {"id": "4", "title": "Medical report"}},
+                    {"type": "reply", "reply": {"id": "5", "title": "Customer care"}},
+                ],
             },
         },
     }
@@ -1696,10 +1749,56 @@ async def send_consent_options_message(to: str, message: str) -> dict:
     return response.json()
 
 
+async def send_post_registration_options_message(to: str, message: str) -> dict:
+    token = _access_token()
+    phone_number_id = _phone_number_id()
+    if not token or not phone_number_id:
+        raise WhatsAppConfigurationError("WhatsApp access token or phone number ID is not configured.")
+
+    url = f"https://graph.facebook.com/{WHATSAPP_API_VERSION}/{phone_number_id}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to,
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {"text": message},
+            "action": {
+                "buttons": [
+                    {"type": "reply", "reply": {"id": "yes", "title": "Yes, continue"}},
+                    {"type": "reply", "reply": {"id": "no", "title": "No, later"}},
+                ],
+            },
+        },
+    }
+    async with httpx.AsyncClient(timeout=20) as client:
+        response = await client.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+    response.raise_for_status()
+    return response.json()
+
+
 async def send_whatsapp_response(to: str, message: str) -> dict:
     if _is_consent_prompt(message):
         try:
             return await send_consent_options_message(to, message)
+        except httpx.HTTPError:
+            return await send_text_message(to, message)
+    if _is_post_registration_consultation_prompt(message):
+        try:
+            return await send_post_registration_options_message(to, message)
+        except httpx.HTTPError:
+            return await send_text_message(to, message)
+    if _is_more_options_reply(message):
+        try:
+            return await send_more_options_message(to, message)
         except httpx.HTTPError:
             return await send_text_message(to, message)
     if _is_basic_menu_reply(message):

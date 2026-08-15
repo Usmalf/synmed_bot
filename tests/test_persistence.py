@@ -261,6 +261,35 @@ class TestPersistenceStores(unittest.TestCase):
         mocked_menu.assert_awaited_once_with("2348107840312", menu)
         mocked_text.assert_not_awaited()
 
+    def test_whatsapp_more_options_sends_interactive_buttons(self):
+        reply = build_keyword_reply("more_options", name="Ada", sender="2348107840312")
+
+        with (
+            patch("web.backend.app.services.whatsapp_service.send_more_options_message", new_callable=AsyncMock) as mocked_more,
+            patch("web.backend.app.services.whatsapp_service.send_text_message", new_callable=AsyncMock) as mocked_text,
+        ):
+            asyncio.run(send_whatsapp_response("2348107840312", reply))
+
+        self.assertIn("More SynMed options", reply)
+        mocked_more.assert_awaited_once_with("2348107840312", reply)
+        mocked_text.assert_not_awaited()
+
+    def test_whatsapp_post_registration_prompt_sends_buttons(self):
+        message = (
+            "Registration completed for Ada Patient (SM0001).\n\n"
+            "We have sent your web access setup link to your email for future web sign-in.\n\n"
+            "Would you like to proceed with consultation now? Reply yes to enter your symptoms, or no to return to the menu."
+        )
+
+        with (
+            patch("web.backend.app.services.whatsapp_service.send_post_registration_options_message", new_callable=AsyncMock) as mocked_buttons,
+            patch("web.backend.app.services.whatsapp_service.send_text_message", new_callable=AsyncMock) as mocked_text,
+        ):
+            asyncio.run(send_whatsapp_response("2348107840312", message))
+
+        mocked_buttons.assert_awaited_once_with("2348107840312", message)
+        mocked_text.assert_not_awaited()
+
     def test_whatsapp_requires_consent_before_menu(self):
         prompt = asyncio.run(build_whatsapp_reply("hi", name="Consent User", sender="2348107840312"))
 
