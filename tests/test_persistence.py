@@ -68,6 +68,7 @@ from web.backend.app.services.doctor_app_service import send_doctor_message
 from web.backend.app.services.patient_app_service import register_web_patient
 from web.backend.app.services.payment_app_service import initialize_web_payment, verify_web_payment
 from web.backend.app.services.payment_app_service import get_current_patient_payment_status
+from web.backend.app.services.settings_service import get_payment_settings, update_payment_settings
 from web.backend.app.services.whatsapp_service import (
     build_basic_menu,
     build_keyword_reply,
@@ -580,6 +581,26 @@ class TestPersistenceStores(unittest.TestCase):
         self.assertEqual(first["payment"]["amount"], 0)
         self.assertEqual(first["payment"]["access_source"], "first_consultation_free")
         self.assertEqual(first["payment"]["reference"], second["payment"]["reference"])
+
+    def test_first_consultation_free_can_be_disabled(self):
+        settings = get_payment_settings()
+        update_payment_settings({**settings, "first_consultation_free_enabled": False})
+        patient = register_patient(
+            telegram_id=None,
+            name="Paid First Consultation Patient",
+            age="41",
+            gender="Female",
+            phone="08033333333",
+            email="paid.first@example.com",
+            address="Lagos",
+            allergy="",
+            email_verified_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+        payment_status = get_current_patient_payment_status(patient["hospital_number"])
+
+        self.assertFalse(payment_status["active"])
+        self.assertIsNone(payment_status["payment"])
 
     def test_whatsapp_registration_completes_without_payment(self):
         self._record_whatsapp_consent()

@@ -748,9 +748,11 @@ def _has_whatsapp_consultation_record(patient_id: str) -> bool:
 
 def _grant_whatsapp_first_consultation_free(patient: dict) -> dict | None:
     patient_id = patient["hospital_number"]
+    settings = get_payment_settings()
+    if not settings.get("first_consultation_free_enabled", True):
+        return None
     if _has_used_whatsapp_first_consultation_free(patient_id) or _has_whatsapp_consultation_record(patient_id):
         return None
-    settings = get_payment_settings()
     reference = create_payment_reference(prefix="free")
     create_payment_record(
         reference=reference,

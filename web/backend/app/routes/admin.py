@@ -164,6 +164,7 @@ class AdminPaymentSettingsPayload(BaseModel):
     followup_label: str
     medical_report_fee: int
     medical_report_label: str
+    first_consultation_free_enabled: bool = True
 
 
 class AdminCouponPayload(BaseModel):

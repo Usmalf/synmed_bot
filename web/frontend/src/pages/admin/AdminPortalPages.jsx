@@ -2157,6 +2157,7 @@ export function AdminSettingsPage() {
     returning_patient_label: "",
     followup_label: "",
     medical_report_label: "",
+    first_consultation_free_enabled: true,
   });
   const [emailBrandingForm, setEmailBrandingForm] = useState({
     brand_name: "SynMed Telehealth",
@@ -2203,6 +2204,7 @@ export function AdminSettingsPage() {
           returning_patient_label: settings.payments.returning_patient_label || "",
           followup_label: settings.payments.followup_label || "",
           medical_report_label: settings.payments.medical_report_label || "",
+          first_consultation_free_enabled: settings.payments.first_consultation_free_enabled !== false,
         });
       }
       if (settings.email_branding) {
@@ -2245,6 +2247,7 @@ export function AdminSettingsPage() {
         returning_patient_label: paymentForm.returning_patient_label,
         followup_label: paymentForm.followup_label,
         medical_report_label: paymentForm.medical_report_label,
+        first_consultation_free_enabled: paymentForm.first_consultation_free_enabled,
       });
       setState((current) => ({
         ...current,
@@ -2424,6 +2427,7 @@ export function AdminSettingsPage() {
             <label><span>Returning patient payment label</span><input required value={paymentForm.returning_patient_label} onChange={(event) => setPaymentForm((current) => ({ ...current, returning_patient_label: event.target.value }))} /></label>
             <label><span>Follow-up payment label</span><input required value={paymentForm.followup_label} onChange={(event) => setPaymentForm((current) => ({ ...current, followup_label: event.target.value }))} /></label>
             <label><span>Medical report payment label</span><input required value={paymentForm.medical_report_label} onChange={(event) => setPaymentForm((current) => ({ ...current, medical_report_label: event.target.value }))} /></label>
+            <label className="admin-settings-toggle"><input type="checkbox" checked={paymentForm.first_consultation_free_enabled} onChange={(event) => setPaymentForm((current) => ({ ...current, first_consultation_free_enabled: event.target.checked }))} /><span><strong>First consultation free</strong><small>Give eligible patients one free consultation before normal consultation fees apply.</small></span></label>
             <button className="button button--primary" type="submit" disabled={busy}>{busy ? "Saving..." : "Save payment settings"}</button>
           </form>
         </DataPanel>

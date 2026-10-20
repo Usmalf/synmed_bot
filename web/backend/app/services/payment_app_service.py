@@ -81,6 +81,8 @@ def _has_any_consultation_record(patient_id: str) -> bool:
 
 
 def _grant_first_consultation_free(patient: dict, payment_config: dict) -> dict | None:
+    if not payment_config.get("first_consultation_free_enabled", True):
+        return None
     patient_id = patient["hospital_number"]
     if _has_used_first_consultation_free(patient_id) or _has_any_consultation_record(patient_id):
         return None

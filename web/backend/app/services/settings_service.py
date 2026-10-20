@@ -16,6 +16,7 @@ DEFAULT_PAYMENT_SETTINGS = {
     "followup_label": os.getenv("FOLLOWUP_PAYMENT_LABEL", "SynMed Appointment Booking Fee"),
     "medical_report_fee": os.getenv("MEDICAL_REPORT_FEE_NGN", "5000"),
     "medical_report_label": os.getenv("MEDICAL_REPORT_LABEL", "SynMed Medical Report Fee"),
+    "first_consultation_free_enabled": os.getenv("FIRST_CONSULTATION_FREE_ENABLED", "1"),
 }
 
 DEFAULT_EMAIL_BRANDING_SETTINGS = {
@@ -88,6 +89,14 @@ def _positive_int(value: str, fallback: str) -> int:
     return max(1, number)
 
 
+def _enabled(value: object, fallback: bool = True) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return fallback
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def get_payment_settings() -> dict:
     values = {**DEFAULT_PAYMENT_SETTINGS, **_read_settings(list(DEFAULT_PAYMENT_SETTINGS.keys()))}
     return {
@@ -100,6 +109,7 @@ def get_payment_settings() -> dict:
         "followup_label": values["followup_label"].strip() or DEFAULT_PAYMENT_SETTINGS["followup_label"],
         "medical_report_fee": _positive_int(values["medical_report_fee"], DEFAULT_PAYMENT_SETTINGS["medical_report_fee"]),
         "medical_report_label": values["medical_report_label"].strip() or DEFAULT_PAYMENT_SETTINGS["medical_report_label"],
+        "first_consultation_free_enabled": _enabled(values["first_consultation_free_enabled"]),
     }
 
 
@@ -143,6 +153,7 @@ def update_payment_settings(payload: dict) -> dict:
     returning_patient_label = (payload.get("returning_patient_label") or "").strip()
     followup_label = (payload.get("followup_label") or "").strip()
     medical_report_label = (payload.get("medical_report_label") or "").strip()
+    first_consultation_free_enabled = _enabled(payload.get("first_consultation_free_enabled"))
     if not new_patient_label or not returning_patient_label or not followup_label or not medical_report_label:
         return {"updated": False, "message": "Payment labels cannot be empty.", "payments": get_payment_settings()}
 
@@ -156,6 +167,7 @@ def update_payment_settings(payload: dict) -> dict:
             "followup_label": followup_label,
             "medical_report_fee": str(medical_report_fee),
             "medical_report_label": medical_report_label,
+            "first_consultation_free_enabled": "1" if first_consultation_free_enabled else "0",
         }
     )
     return {"updated": True, "message": "Payment settings updated.", "payments": get_payment_settings()}

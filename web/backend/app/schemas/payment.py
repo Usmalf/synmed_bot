@@ -9,6 +9,7 @@ class PaymentConfigResponse(BaseModel):
     returning_patient_fee: int
     new_patient_label: str
     returning_patient_label: str
+    first_consultation_free_enabled: bool = True
     registration_coupons_available: bool = False
     consultation_coupons_available: bool = False
 
